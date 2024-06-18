@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_product_form_inherit_zra" model="ir.ui.view">
+        <field name="name">product.template.form.inherit.zra</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_only_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook/page[@name='general_information']/group" position="inside">
+                <group string="ZRA Classifications">
+                    <field name="classification" widget="selection"/>
+                    <field name="item_cls_cd" readonly="1"/>
+                    <field name="use_yn" readonly="1"/>
+                </group>
+                <group string="ZRA Input">
+                    <field name="origin_country_id" />
+                    <field name="origin_country_cd" readonly="1"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

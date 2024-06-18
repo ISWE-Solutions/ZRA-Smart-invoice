@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access.product.template,access_product_template,zra_smart_invoice.model_product_template,base.group_user,1,1,1,1
+access.account.move.reversal,Access_account_move_Reversal,zra_smart_invoice.model_account_move_reversal,base.group_user,1,1,1,1

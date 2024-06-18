@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- Standard Rated(16%) -->
+        <record id="tax_type_standard_rated" model="account.tax">
+            <field name="name">Standard Rated(16%)</field>
+            <field name="amount">16</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">A</field>
+        </record>
+        <!-- Minimum Taxable Value (MTV-16%) -->
+        <record id="tax_type_mtv" model="account.tax">
+            <field name="name">Minimum Taxable Value (MTV-16%)</field>
+            <field name="amount">16</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">B</field>
+        </record>
+        <!-- Exports(0%) -->
+        <record id="tax_type_exports" model="account.tax">
+            <field name="name">Exports(0%)</field>
+            <field name="amount">0</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">C1</field>
+        </record>
+        <!-- Zero-rating LPO -->
+        <record id="tax_type_zero_rating_lpo" model="account.tax">
+            <field name="name">Zero-rating LPO</field>
+            <field name="amount">0</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">C2</field>
+        </record>
+        <!-- Zero-rated by nature -->
+        <record id="tax_type_zero_rated_nature" model="account.tax">
+            <field name="name">Zero-rated by nature</field>
+            <field name="amount">0</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">C3</field>
+        </record>
+        <!-- Exempt -->
+        <record id="tax_type_exempt" model="account.tax">
+            <field name="name">Exempt</field>
+            <field name="amount">0</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">D</field>
+        </record>
+        <!-- Reverse VAT -->
+        <record id="tax_type_reverse_vat" model="account.tax">
+            <field name="name">Reverse VAT</field>
+            <field name="amount">16</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">RVAT</field>
+        </record>
+        <!-- Disbursement -->
+        <record id="tax_type_disbursement" model="account.tax">
+            <field name="name">Disbursement</field>
+            <field name="amount">0</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">E</field>
+        </record>
+        <!-- TOT -->
+        <record id="tax_type_tot" model="account.tax">
+            <field name="name">TOT</field>
+            <field name="amount">0</field>
+            <field name="type_tax_use">sale</field>
+            <field name="amount_type">percent</field>
+            <field name="description">TOT</field>
+        </record>
+    </data>
+</odoo>
