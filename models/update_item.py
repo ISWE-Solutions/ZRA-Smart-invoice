@@ -1,6 +1,9 @@
 from odoo import models, fields, api, _
 import requests
+import logging
 import csv
+
+_logger = logging.getLogger(__name__)
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
@@ -16,12 +19,17 @@ class ProductTemplate(models.Model):
     mjr_tg_yn = fields.Char(string='Major Target', compute='_compute_classification_data', store=True)
     use_yn = fields.Char(string='Use', compute='_compute_classification_data', store=True)
 
-    origin_country_id = fields.Many2one('res.country', string='Origin Country', default=lambda self: self.env.ref('base.zm'))
-    origin_country_cd = fields.Char(string='Origin Country Code', readonly=True)
+    cdNm = fields.Selection(
+        selection='_get_country_options',
+        string='Country',
+        required=True
+    )
+    cd = fields.Char(string='Origin Country Code', compute='_compute_country_data', readonly=True)
 
-    @api.onchange('origin_country_id')
-    def _onchange_origin_country_id(self):
-        self.origin_country_cd = self.origin_country_id.code if self.origin_country_id else ''
+    @api.model
+    def _get_country_options(self):
+        country_data = self.env['country.data'].fetch_country_data()
+        return [(item[0], item[0]) for item in country_data]
 
     @api.model
     def _get_classification_options(self):
@@ -40,12 +48,21 @@ class ProductTemplate(models.Model):
                 record.item_cls_cd = ''
                 record.use_yn = ''
 
+    @api.onchange('cdNm')
+    def _compute_country_data(self):
+        country_data = {item[0]: item[1] for item in self.env['country.data'].fetch_country_data()}
+        for record in self:
+            selected_data = country_data.get(record.cdNm)
+            if selected_data:
+                record.cd = selected_data['cd']
+            else:
+                record.cd = ''
+
     @api.model
     def create(self, vals):
-        print('Create method called with vals:', vals)
-        if 'origin_country_id' in vals:
-            country = self.env['res.country'].browse(vals['origin_country_id'])
-            vals['origin_country_cd'] = country.code
+        if 'cdNm' in vals:
+            country = dict(self._get_country_options())
+            vals['cd'] = country.get(vals['cdNm'], '')
         context = dict(self.env.context or {})
         context['skip_write'] = True
         record = super(ProductTemplate, self.with_context(context)).create(vals)
@@ -55,7 +72,6 @@ class ProductTemplate(models.Model):
     def write(self, vals):
         if self.env.context.get('skip_write'):
             return super(ProductTemplate, self).write(vals)
-        print('update method called with vals:', vals)
         result = super(ProductTemplate, self).write(vals)
         self._handle_post_item_data(vals, is_create=False)
         return result
@@ -71,9 +87,7 @@ class ProductTemplate(models.Model):
         self._post_item_data(vals, url, success_message)
 
     def _post_item_data(self, vals, url, success_message):
-        print('Post item data called with URL:', url, 'and vals:', vals)
         current_user = self.env.user
-        origin_country_cd = vals.get('origin_country_cd', self.origin_country_cd)
         payload = {
             "tpin": "1018798746",
             "bhfId": "000",
@@ -82,7 +96,7 @@ class ProductTemplate(models.Model):
             "itemTyCd": "2",
             "itemNm": self.name,
             "itemStdNm": self.name,
-            "orgnNatCd": origin_country_cd,
+            "orgnNatCd": self.cd,
             "pkgUnitCd": "NT",
             "qtyUnitCd": "U",
             "vatCatCd": "A",
@@ -112,13 +126,11 @@ class ProductTemplate(models.Model):
             response.raise_for_status()
             result_data = response.json()
             result_msg = result_data.get("resultMsg")
-            print('Success:', result_msg)
             self.message_post(
                 body=f"{success_message}: {result_msg}, \nProduct Name: {self.name}, Classification Code: {self.item_cls_cd}")
             self.action_client_action(result_msg, 'success')
         except requests.exceptions.RequestException as e:
             error_message = str(e)
-            print('Failed to post item data:', e)
             self._log_error(vals, error_message)
             self.message_post(
                 body=f"Exception occurred: {error_message}\nProduct Name: {self.name}, Classification Code: {self.item_cls_cd}")

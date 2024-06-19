@@ -12,8 +12,8 @@
                     <field name="use_yn" readonly="1"/>
                 </group>
                 <group string="ZRA Input">
-                    <field name="origin_country_id" />
-                    <field name="origin_country_cd" readonly="1"/>
+                    <field name="cdNm"/>
+                    <field name="cd" />
                 </group>
             </xpath>
         </field>
