@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <template id="customize_new_button" inherit_id="web.ListView">
+        <xpath expr="//button[@type='action' and contains(@class, 'o_list_button_add')]" position="attributes">
+            <attribute name="string">Create Purchase Data</attribute>
+        </xpath>
+    </template>
+</odoo>

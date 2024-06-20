@@ -8,27 +8,27 @@ class StockPicking(models.Model):
     _inherit = 'stock.picking'
 
     def button_validate(self):
-        # Debugging: Log and print entering the method
         _logger.info('Entering button_validate method.')
         print('Entering button_validate method.')
 
         res = super(StockPicking, self).button_validate()
 
         for picking in self:
-            # Debugging: Log and print picking type
             _logger.info(f'Processing picking with type: {picking.picking_type_id.code}')
             print(f'Processing picking with type: {picking.picking_type_id.code}')
 
-            # Handle both incoming and outgoing pickings
             moves = picking.move_ids_without_package
 
             for move in moves:
-                # Debugging: Log and print move details
-                _logger.info(f'Processing move for product: {move.product_id.display_name}')
-                print(f'Processing move for product: {move.product_id.display_name}')
+                product = move.product_id
+                new_qty = product.qty_available
+                product_template = product.product_tmpl_id
 
-                # Sample payload, you can customize it as per your needs
-                payload = {
+                _logger.info(f'Processing move for product: {product.display_name}')
+                print(f'Processing move for product: {product.display_name}')
+
+                # Payload for the first API request
+                payload_purchase = {
                     "tpin": "1018798746",
                     "bhfId": "000",
                     "invcNo": 9,
@@ -88,18 +88,18 @@ class StockPicking(models.Model):
                 }
 
                 try:
-                    response = requests.post("http://localhost:8085/trnsPurchase/savePurchase", json=payload)
+                    response = requests.post("http://localhost:8085/trnsPurchase/savePurchase", json=payload_purchase)
                     response.raise_for_status()
-                    result_msg = response.json().get('resultMsg', 'No result message returned')
+                    result_msg_purchase = response.json().get('resultMsg', 'No result message returned')
 
                     # Post the result message to the chatter
                     picking.message_post(
-                        body="API Response Item Purchase: %s, \nProduct Name: %s" % (result_msg, move.product_id.display_name),
+                        body="API Response Item Purchase: %s, \nProduct Name: %s" % (result_msg_purchase, move.product_id.display_name),
                         subtype_id=self.env.ref('mail.mt_note').id
                     )
 
-                    _logger.info(f'API Response: {result_msg}')
-                    print(f'API Response: {result_msg}')
+                    _logger.info(f'API Purchase Response: {result_msg_purchase}')
+                    print(f'API Purchase Response: {result_msg_purchase}')
                 except requests.exceptions.RequestException as e:
                     _logger.error(f'API request failed: {e}')
                     print(f'API request failed: {e}')
@@ -108,10 +108,138 @@ class StockPicking(models.Model):
                 _logger.info(f'Message posted for product: {move.product_id.display_name}')
                 print(f'Message posted for product: {move.product_id.display_name}')
 
+                # Payload for the second API request (new endpoint)
+                payload_new_endpoint = {
+                    "tpin": "1018798746",
+                    "bhfId": "000",
+                    "sarNo": 1,
+                    "orgSarNo": 0,
+                    "regTyCd": "M",
+                    "custTpin": None,
+                    "custNm": None,
+                    "custBhfId": "000",
+                    "sarTyCd": "13",
+                    "ocrnDt": "20200126",
+                    "totItemCnt": 2,
+                    "totTaxblAmt": 70000,
+                    "totTaxAmt": 12000,
+                    "totAmt": 70000,
+                    "remark": None,
+                    "regrId": "Admin",
+                    "regrNm": "Admin",
+                    "modrNm": "Admin",
+                    "modrId": "Admin",
+                    "itemList": [
+                        {
+                            "itemSeq": 1,
+                            "itemCd": "RW1NTXU0000006",
+                            "itemClsCd": "5059690800",
+                            "itemNm": "AMAZI Rwenzoli",
+                            "bcd": None,
+                            "pkgUnitCd": "NT",
+                            "pkg": 10,
+                            "qtyUnitCd": "U",
+                            "qty": 10,
+                            "itemExprDt": None,
+                            "prc": 3500,
+                            "splyAmt": 35000,
+                            "totDcAmt": 0,
+                            "taxblAmt": 35000,
+                            "vatCatCd": "A",
+                            "iplCatCd": "IPL1",
+                            "tlCatCd": "TL",
+                            "exciseTxCatCd": "EXEEG",
+                            "vatAmt": 30508,
+                            "iplAmt": 30508,
+                            "tlAmt": 30508,
+                            "exciseTxAmt": 30508,
+                            "taxAmt": 6000,
+                            "totAmt": 35000
+                        },
+                        {
+                            "itemSeq": 2,
+                            "itemCd": "RW2TYXLTR0000001",
+                            "itemClsCd": "5059690800",
+                            "itemNm": "MAZUT",
+                            "bcd": None,
+                            "pkgUnitCd": "NT",
+                            "pkg": 10,
+                            "qtyUnitCd": "U",
+                            "qty": 10,
+                            "itemExprDt": None,
+                            "prc": 3500,
+                            "splyAmt": 35000,
+                            "totDcAmt": 0,
+                            "taxblAmt": 35000,
+                            "vatCatCd": "A",
+                            "iplCatCd": "IPL1",
+                            "tlCatCd": "TL",
+                            "exciseTxCatCd": "EXEEG",
+                            "vatAmt": 30508,
+                            "iplAmt": 30508,
+                            "tlAmt": 30508,
+                            "exciseTxAmt": 30508,
+                            "totAmt": 35000
+                        }
+                    ]
+                }
+
+                try:
+                    response = requests.post('http://localhost:8085/stock/saveStockItems', json=payload_new_endpoint)
+                    response.raise_for_status()
+                    result_msg_new_endpoint = response.json().get('resultMsg', 'No result message returned')
+
+                    # Post the result message to the chatter
+                    picking.message_post(
+                        body="Save Stock API Response New Endpoint: %s, \nProduct Name: %s" % (result_msg_new_endpoint, move.product_id.display_name),
+                        subtype_id=self.env.ref('mail.mt_note').id
+                    )
+
+                    _logger.info(f'API New Endpoint Response: {result_msg_new_endpoint}')
+                    print(f' Save Stock Item API Endpoint Response: {result_msg_new_endpoint}')
+                except requests.exceptions.RequestException as e:
+                    _logger.error(f'API request failed: {e}')
+                    print(f'API request failed: {e}')
+
+                # Payload for the third API request
+                payload_stock = {
+                    "tpin": "1018798746",
+                    "bhfId": "000",
+                    "regrId": "Admin",
+                    "regrNm": "Admin",
+                    "modrNm": "Admin",
+                    "modrId": "Admin",
+                    "stockItemList": [
+                        {
+                            "itemCd": product.default_code or product.id,
+                            "rsdQty": new_qty
+                        }
+                    ]
+                }
+
+                try:
+                    response = requests.post('http://localhost:8085/stockMaster/saveStockMaster', json=payload_stock)
+                    response.raise_for_status()
+                    result_msg_stock = response.json().get('resultMsg', 'No result message received')
+                    _logger.info(f'Endpoint response: {result_msg_stock}')
+                    print(f'Stock Master Endpoint response: {result_msg_stock}')
+                except requests.exceptions.RequestException as e:
+                    result_msg_stock = str(e)
+                    _logger.error(f'Error during POST request: {result_msg_stock}')
+                    print(f'Error during POST request: {result_msg_stock}')
+
+                # Post the resultMsg to the chatter
+                picking.message_post(
+                    body='Quantity of product {} has been updated to {}. Endpoint response: {}'.format(product.display_name, new_qty, result_msg_stock),
+                    subtype_id=self.env.ref('mail.mt_note').id
+                )
+
+                _logger.info(f'Message posted for product: {product.display_name} on stock.picking')
+                print(f'Message posted for product: {product.display_name} on stock.picking')
+
             _logger.info(f'Skipping picking with type: {picking.picking_type_id.code}')
             print(f'Skipping picking with type: {picking.picking_type_id.code}')
 
-        # Debugging: Log and print exiting the method
         _logger.info('Exiting button_validate method.')
         print('Exiting button_validate method.')
 
