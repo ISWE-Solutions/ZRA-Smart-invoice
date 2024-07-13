@@ -25,7 +25,7 @@ class ClassCodes(models.AbstractModel):
             last_modified_time = os.path.getmtime(file_path)
             if time.time() - last_modified_time < 24 * 3600:
                 # Load data from the file
-                _logger.info("Loading country codes from file.")
+                # _logger.info("Loading country codes from file.")
                 with open(file_path, 'r') as f:
                     cls._country_codes = json.load(f)
                 return cls._country_codes
@@ -55,7 +55,7 @@ class ClassCodes(models.AbstractModel):
                 for item in cls_item.get('dtlList', [])
             ]
 
-            _logger.info("Fetched country codes: %s", country_codes)
+            # _logger.info("Fetched country codes: %s", country_codes)
             cls._country_codes = country_codes
 
             # Save to file
@@ -64,10 +64,10 @@ class ClassCodes(models.AbstractModel):
             return country_codes
 
         except requests.exceptions.HTTPError as http_err:
-            _logger.error('HTTP error occurred: %s', http_err)
+            # _logger.error('HTTP error occurred: %s', http_err)
             return []
         except Exception as err:
-            _logger.error('Other error occurred: %s', err)
+            # _logger.error('Other error occurred: %s', err)
             return []
 
     @classmethod
@@ -76,7 +76,7 @@ class ClassCodes(models.AbstractModel):
         try:
             with open(file_path, 'w') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-            _logger.info("Data saved to %s", file_path)
+            # _logger.info("Data saved to %s", file_path)
         except IOError as e:
             _logger.error("Unable to save data to file: %s", e)
 

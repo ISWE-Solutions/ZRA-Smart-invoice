@@ -1,63 +1,145 @@
 from odoo import models, fields, api, _
-import requests
+import logging
 import csv
+import requests
+
+_logger = logging.getLogger(__name__)
+
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
-    classification = fields.Selection(
-        selection='_get_classification_options',
+    classification = fields.Many2one(
+        'zra.item.data',
         string='Item Classification',
-        required=True
+        required=False
     )
-    item_cls_cd = fields.Char(string='Item Classification Code', compute='_compute_classification_data', store=True)
-    item_cls_lvl = fields.Integer(string='Item Classification Level', compute='_compute_classification_data', store=True)
-    tax_ty_cd = fields.Char(string='Tax Type Code', compute='_compute_classification_data', store=True)
-    mjr_tg_yn = fields.Char(string='Major Target', compute='_compute_classification_data', store=True)
-    use_yn = fields.Char(string='Use', compute='_compute_classification_data', store=True)
+    item_cls_cd = fields.Char(string='Item Classification Code', readonly=True, store=True)
+    item_cls_lvl = fields.Integer(string='Item Classification Level', readonly=True, store=True)
+    tax_ty_cd = fields.Char(string='Tax Type Code', readonly=True, store=True)
+    mjr_tg_yn = fields.Char(string='Major Target', readonly=True, store=True)
+    use_yn = fields.Char(string='Use', readonly=True, store=True)
 
-    origin_country_id = fields.Many2one('res.country', string='Origin Country', default=lambda self: self.env.ref('base.zm'))
-    origin_country_cd = fields.Char(string='Origin Country Code', readonly=True)
+    quantity_unit_cdNm = fields.Many2one(
+        'quantity.unit.data',
+        string='Quantity Unit',
+        required=False
+    )
+    quantity_unit_cd = fields.Char(string="Quantity Unit Code", readonly=True, store=True)
 
-    @api.onchange('origin_country_id')
-    def _onchange_origin_country_id(self):
-        self.origin_country_cd = self.origin_country_id.code if self.origin_country_id else ''
+    packaging_data_cdNm = fields.Many2one(
+        'packaging.unit.data',
+        string='Packaging Unit',
+        required=False
+    )
+    packaging_unit_cd = fields.Char(string='Packaging Code', readonly=True, store=True)
 
-    @api.model
-    def _get_classification_options(self):
-        classification_data = self.env['zra.item.save'].fetch_classification_data()
-        return [(item[0], item[0]) for item in classification_data]
+    cdNm = fields.Many2one(
+        'country.data',
+        string='Country',
+        required=False
+    )
+    cd = fields.Char(string='Origin Country Code', readonly=True, store=True)
 
-    @api.depends('classification')
-    def _compute_classification_data(self):
-        classification_data = {item[0]: item[1] for item in self.env['zra.item.save'].fetch_classification_data()}
-        for record in self:
-            selected_data = classification_data.get(record.classification)
-            if selected_data:
-                record.item_cls_cd = selected_data['itemClsCd']
-                record.use_yn = selected_data['useYn']
-            else:
-                record.item_cls_cd = ''
-                record.use_yn = ''
+    item_Cd = fields.Char(string='Item Code', readonly=True, store=True)
+
+    def generate_item_code(self, cd, product_type, packaging_unit, quantity_unit):
+        sequence = self.env['item.code.sequence'].search([], limit=1)
+        if not sequence:
+            sequence = self.env['item.code.sequence'].create({})
+        next_number = sequence.next_number
+        sequence.next_number += 1
+        next_number_str = str(next_number).zfill(7)
+        item_code = f"{cd}{product_type}{packaging_unit}{quantity_unit}{next_number_str}"
+        return item_code
+
+    @api.onchange('classification')
+    def _onchange_classification(self):
+        if self.classification:
+            self.item_cls_cd = self.classification.itemClsCd
+            self.item_cls_lvl = self.classification.itemClsLvl
+            self.tax_ty_cd = self.classification.taxTyCd
+            self.mjr_tg_yn = self.classification.mjrTgYn
+            self.use_yn = self.classification.useYn
+        else:
+            self.item_cls_cd = False
+            self.item_cls_lvl = False
+            self.tax_ty_cd = False
+            self.mjr_tg_yn = False
+            self.use_yn = False
+
+    @api.onchange('quantity_unit_cdNm')
+    def _onchange_quantity_unit(self):
+        if self.quantity_unit_cdNm:
+            self.quantity_unit_cd = self.quantity_unit_cdNm.quantity_unit_cd
+        else:
+            self.quantity_unit_cd = False
+
+    @api.onchange('packaging_data_cdNm')
+    def _onchange_packaging_unit(self):
+        if self.packaging_data_cdNm:
+            self.packaging_unit_cd = self.packaging_data_cdNm.packaging_unit_cd
+        else:
+            self.packaging_unit_cd = False
+
+    @api.onchange('cdNm')
+    def _onchange_country(self):
+        if self.cdNm:
+            self.cd = self.cdNm.country_cd
+        else:
+            self.cd = False
 
     @api.model
     def create(self, vals):
-        print('Create method called with vals:', vals)
-        if 'origin_country_id' in vals:
-            country = self.env['res.country'].browse(vals['origin_country_id'])
-            vals['origin_country_cd'] = country.code
-        context = dict(self.env.context or {})
-        context['skip_write'] = True
-        record = super(ProductTemplate, self.with_context(context)).create(vals)
+        _logger.info("Creating product with values: %s", vals)
+        if 'cdNm' in vals:
+            country = self.env['country.data'].browse(vals['cdNm'])
+            vals['cd'] = country.country_cd
+        if 'classification' in vals:
+            classification = self.env['zra.item.data'].browse(vals['classification'])
+            vals.update({
+                'item_cls_cd': classification.itemClsCd,
+                'item_cls_lvl': classification.itemClsLvl,
+                'tax_ty_cd': classification.taxTyCd,
+                'mjr_tg_yn': classification.mjrTgYn,
+                'use_yn': classification.useYn
+            })
+        if 'quantity_unit_cdNm' in vals:
+            quantity_unit = self.env['quantity.unit.data'].browse(vals['quantity_unit_cdNm'])
+            vals['quantity_unit_cd'] = quantity_unit.quantity_unit_cd
+        if 'packaging_data_cdNm' in vals:
+            packaging_unit = self.env['packaging.unit.data'].browse(vals['packaging_data_cdNm'])
+            vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
+
+        record = super(ProductTemplate, self).create(vals)
         record._handle_post_item_data(vals, is_create=True)
+        _logger.info("Product created with ID: %s", record.id)
         return record
 
     def write(self, vals):
-        if self.env.context.get('skip_write'):
-            return super(ProductTemplate, self).write(vals)
-        print('update method called with vals:', vals)
+        _logger.info("Updating product with values: %s", vals)
+        if 'cdNm' in vals:
+            country = self.env['country.data'].browse(vals['cdNm'])
+            vals['cd'] = country.country_cd
+        if 'classification' in vals:
+            classification = self.env['zra.item.data'].browse(vals['classification'])
+            vals.update({
+                'item_cls_cd': classification.itemClsCd,
+                'item_cls_lvl': classification.itemClsLvl,
+                'tax_ty_cd': classification.taxTyCd,
+                'mjr_tg_yn': classification.mjrTgYn,
+                'use_yn': classification.useYn
+            })
+        if 'quantity_unit_cdNm' in vals:
+            quantity_unit = self.env['quantity.unit.data'].browse(vals['quantity_unit_cdNm'])
+            vals['quantity_unit_cd'] = quantity_unit.quantity_unit_cd
+        if 'packaging_data_cdNm' in vals:
+            packaging_unit = self.env['packaging.unit.data'].browse(vals['packaging_data_cdNm'])
+            vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
+
         result = super(ProductTemplate, self).write(vals)
         self._handle_post_item_data(vals, is_create=False)
+        _logger.info("Product updated with ID: %s", self.id)
         return result
 
     def _handle_post_item_data(self, vals, is_create):
@@ -71,20 +153,21 @@ class ProductTemplate(models.Model):
         self._post_item_data(vals, url, success_message)
 
     def _post_item_data(self, vals, url, success_message):
-        print('Post item data called with URL:', url, 'and vals:', vals)
         current_user = self.env.user
-        origin_country_cd = vals.get('origin_country_cd', self.origin_country_cd)
+        if not self.item_Cd:
+            self.item_Cd = self.generate_item_code(self.cd, '2', self.packaging_unit_cd, self.quantity_unit_cd)
+
         payload = {
             "tpin": "1018798746",
             "bhfId": "000",
-            "itemCd": "ZM2NTBA0000019",
+            "itemCd": self.item_Cd,
             "itemClsCd": self.item_cls_cd,
             "itemTyCd": "2",
             "itemNm": self.name,
             "itemStdNm": self.name,
-            "orgnNatCd": origin_country_cd,
-            "pkgUnitCd": "NT",
-            "qtyUnitCd": "U",
+            "orgnNatCd": self.cd,
+            "pkgUnitCd": self.packaging_unit_cd,
+            "qtyUnitCd": self.quantity_unit_cd,
             "vatCatCd": "A",
             "btchNo": None,
             "bcd": None,
@@ -112,23 +195,15 @@ class ProductTemplate(models.Model):
             response.raise_for_status()
             result_data = response.json()
             result_msg = result_data.get("resultMsg")
-            print('Success:', result_msg)
             self.message_post(
                 body=f"{success_message}: {result_msg}, \nProduct Name: {self.name}, Classification Code: {self.item_cls_cd}")
             self.action_client_action(result_msg, 'success')
         except requests.exceptions.RequestException as e:
             error_message = str(e)
-            print('Failed to post item data:', e)
             self._log_error(vals, error_message)
             self.message_post(
                 body=f"Exception occurred: {error_message}\nProduct Name: {self.name}, Classification Code: {self.item_cls_cd}")
             self.action_client_action(error_message, 'danger')
-
-    def _log_error(self, vals, error_message):
-        log_file_path = '/var/log/odoo/zra_smart_invoice_error_log.csv'
-        with open(log_file_path, 'a', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([vals.get("default_code", ""), error_message])
 
     def action_client_action(self, message, message_type):
         return {
@@ -136,7 +211,15 @@ class ProductTemplate(models.Model):
             'tag': 'display_notification',
             'params': {
                 'title': _('Notification'),
+                'message': message,
                 'type': message_type,
                 'sticky': False
             }
         }
+
+
+class ItemCodeSequence(models.Model):
+    _name = 'item.code.sequence'
+    _description = 'Item Code Sequence'
+
+    next_number = fields.Integer('Next Number', default=1)

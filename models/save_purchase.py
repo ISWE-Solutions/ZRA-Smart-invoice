@@ -1,8 +1,11 @@
 from odoo import models, api
 import logging
 import requests
+import json
+import re
 
 _logger = logging.getLogger(__name__)
+
 
 class StockPicking(models.Model):
     _inherit = 'stock.picking'
@@ -19,82 +22,125 @@ class StockPicking(models.Model):
 
             moves = picking.move_ids_without_package
 
-            for move in moves:
+            total_taxable_amount = 0
+            total_tax_amount = 0
+            total_amount = 0
+
+            # Construct itemList once
+            item_list = []
+            for idx, move in enumerate(moves):
                 product = move.product_id
-                new_qty = product.qty_available
                 product_template = product.product_tmpl_id
 
                 _logger.info(f'Processing move for product: {product.display_name}')
                 print(f'Processing move for product: {product.display_name}')
 
-                # Payload for the first API request
+                taxes = move.sale_line_id.tax_id if move.sale_line_id else move.purchase_line_id.taxes_id
+                product_price = product_template.standard_price  # default to standard price
+                supplier_info = self.env['product.supplierinfo'].search([('product_tmpl_id', '=', product_template.id)],
+                                                                        limit=1)
+                if supplier_info:
+                    product_price = supplier_info.price
+
+                qty = move.product_uom_qty
+                price = product_price
+                supply_amount = qty * price
+
+                tax_description = taxes[0].description if taxes else 'A'  # Default to 'A' if no taxes
+                tax_rate = taxes[0].amount / 100 if taxes else 0.16  # Default to 16% if no taxes
+
+                tax_amount = supply_amount * tax_rate
+                total_item_amount = supply_amount + tax_amount
+
+                total_taxable_amount += supply_amount
+                total_tax_amount += tax_amount
+                total_amount += total_item_amount
+
+                item_list.append({
+                    "itemSeq": idx + 1,
+                    "itemCd": product_template.item_Cd or move.product_id.default_code or str(move.product_id.id),
+                    "itemClsCd": move.product_id.product_tmpl_id.item_cls_cd,
+                    "itemNm": move.product_id.display_name,
+                    "bcd": "",
+                    "spplrItemClsCd": None,
+                    "spplrItemCd": None,
+                    "spplrItemNm": None,
+                    "pkgUnitCd": product_template.packaging_unit_cd,
+                    "pkg": qty,
+                    "qtyUnitCd": product_template.quantity_unit_cd,
+                    "qty": qty,
+                    "prc": price,
+                    "splyAmt": supply_amount,
+                    "totDcAmt": 0,
+                    "dcRt": 0,
+                    "dcAmt": 0,
+                    "vatCatCd": tax_description,
+                    "iplCatCd": None,
+                    "tlCatCd": None,
+                    "exciseTxCatCd": None,
+                    "taxAmt": round(tax_amount, 2),
+                    "taxblAmt": round(supply_amount, 2),
+                    "totAmt": round(total_item_amount, 2),
+                    "itemExprDt": None
+                })
+
+                # Calculate the updated stock quantity
+                stock_quant = self.env['stock.quant'].search(
+                    [('product_id', '=', product.id), ('location_id', '=', picking.location_dest_id.id)], limit=1)
+                if not stock_quant:
+                    current_stock_qty = 0
+                else:
+                    current_stock_qty = stock_quant.quantity
+
+                # Adjust stock quantity based on operation type
+                if picking.picking_type_id.code == 'incoming':
+                    updated_stock_qty = current_stock_qty
+                elif picking.picking_type_id.code == 'outgoing':
+                    updated_stock_qty = stock_quant.quantity
+
+            if picking.picking_type_id.code == 'incoming':
                 payload_purchase = {
                     "tpin": "1018798746",
                     "bhfId": "000",
-                    "invcNo": 9,
+                    "invcNo": re.search(r'\d+', picking.name).group(),
                     "orgInvcNo": 0,
-                    "spplrTpin": "1000328006",
+                    "spplrTpin": picking.partner_id.tpin or None,
                     "spplrBhfId": "000",
-                    "spplrNm": "Company 1234",
-                    "spplrInvcNo": "88",
+                    "spplrNm": picking.partner_id.name,
+                    "spplrInvcNo": None,
                     "regTyCd": "M",
                     "pchsTyCd": "N",
                     "rcptTyCd": "P",
                     "pmtTyCd": "01",
                     "pchsSttsCd": "02",
-                    "cfmDt": "20240502210300",
-                    "pchsDt": "20240502",
-                    "wrhsDt": "",
+                    "cfmDt": picking.scheduled_date.strftime(
+                        "%Y%m%d%H%M%S") if picking.scheduled_date else "20240502210300",
+                    "pchsDt": picking.scheduled_date.strftime("%Y%m%d") if picking.scheduled_date else "20240502",
                     "cnclReqDt": "",
                     "cnclDt": "",
                     "rfdDt": "",
-                    "totItemCnt": 1,
-                    "totTaxblAmt": 86.2069,
-                    "totTaxAmt": 13.7931,
-                    "totAmt": 100,
-                    "remark": "Very yummy yummy",
-                    "regrNm": "LUNGUJ",
-                    "regrId": "LUNGUJ",
-                    "modrNm": "LUNGUJ",
-                    "modrId": "LUNGUJ",
-                    "itemList": [
-                        {
-                            "itemSeq": 1,
-                            "itemCd": "20044",
-                            "itemClsCd": "5059690800",
-                            "itemNm": "Chicken Wings",
-                            "bcd": "",
-                            "spplrItemClsCd": None,
-                            "spplrItemCd": None,
-                            "spplrItemNm": None,
-                            "pkgUnitCd": "NT",
-                            "pkg": 2,
-                            "qtyUnitCd": "U",
-                            "qty": 1,
-                            "prc": 100,
-                            "splyAmt": 100,
-                            "dcRt": 0,
-                            "dcAmt": 0,
-                            "vatCatCd": "A",
-                            "iplCatCd": None,
-                            "tlCatCd": None,
-                            "exciseTxCatCd": None,
-                            "taxAmt": 0,
-                            "taxblAmt": 0,
-                            "totAmt": 100,
-                            "itemExprDt": None
-                        }
-                    ]
+                    "totItemCnt": len(moves),
+                    "totTaxblAmt": round(total_taxable_amount, 2),
+                    "totTaxAmt": round(total_tax_amount, 2),
+                    "totAmt": round(total_amount, 2),
+                    "remark": picking.note or "",
+                    "regrNm": picking.write_uid.name,
+                    "regrId": picking.write_uid.id,
+                    "modrNm": picking.write_uid.name,
+                    "modrId": picking.write_uid.id,
+                    "itemList": item_list
                 }
+
+                print('Payload being sent:', json.dumps(payload_purchase, indent=4))
 
                 try:
                     response = requests.post("http://localhost:8085/trnsPurchase/savePurchase", json=payload_purchase)
                     response.raise_for_status()
                     result_msg_purchase = response.json().get('resultMsg', 'No result message returned')
 
-                    # Post the result message to the chatter
                     picking.message_post(
-                        body="API Response Item Purchase: %s, \nProduct Name: %s" % (result_msg_purchase, move.product_id.display_name),
+                        body="API Response Item Purchase: %s, \nProduct Name: %s" % (
+                            result_msg_purchase, move.product_id.display_name),
                         subtype_id=self.env.ref('mail.mt_note').id
                     )
 
@@ -104,141 +150,85 @@ class StockPicking(models.Model):
                     _logger.error(f'API request failed: {e}')
                     print(f'API request failed: {e}')
 
-                # Debugging: Confirm message was posted
-                _logger.info(f'Message posted for product: {move.product_id.display_name}')
-                print(f'Message posted for product: {move.product_id.display_name}')
-
-                # Payload for the second API request (new endpoint)
-                payload_new_endpoint = {
+                payload_stock_master = {
                     "tpin": "1018798746",
                     "bhfId": "000",
-                    "sarNo": 1,
-                    "orgSarNo": 0,
-                    "regTyCd": "M",
-                    "custTpin": None,
-                    "custNm": None,
-                    "custBhfId": "000",
-                    "sarTyCd": "13",
-                    "ocrnDt": "20200126",
-                    "totItemCnt": 2,
-                    "totTaxblAmt": 70000,
-                    "totTaxAmt": 12000,
-                    "totAmt": 70000,
-                    "remark": None,
-                    "regrId": "Admin",
-                    "regrNm": "Admin",
-                    "modrNm": "Admin",
-                    "modrId": "Admin",
-                    "itemList": [
+                    "regrId": picking.create_uid.name or "Admin",
+                    "regrNm": picking.create_uid.name or "Admin",
+                    "modrNm": picking.write_uid.name or "Admin",
+                    "modrId": picking.write_uid.name or "Admin",
+                    "stockItemList": [
                         {
-                            "itemSeq": 1,
-                            "itemCd": "RW1NTXU0000006",
-                            "itemClsCd": "5059690800",
-                            "itemNm": "AMAZI Rwenzoli",
-                            "bcd": None,
-                            "pkgUnitCd": "NT",
-                            "pkg": 10,
-                            "qtyUnitCd": "U",
-                            "qty": 10,
-                            "itemExprDt": None,
-                            "prc": 3500,
-                            "splyAmt": 35000,
-                            "totDcAmt": 0,
-                            "taxblAmt": 35000,
-                            "vatCatCd": "A",
-                            "iplCatCd": "IPL1",
-                            "tlCatCd": "TL",
-                            "exciseTxCatCd": "EXEEG",
-                            "vatAmt": 30508,
-                            "iplAmt": 30508,
-                            "tlAmt": 30508,
-                            "exciseTxAmt": 30508,
-                            "taxAmt": 6000,
-                            "totAmt": 35000
-                        },
-                        {
-                            "itemSeq": 2,
-                            "itemCd": "RW2TYXLTR0000001",
-                            "itemClsCd": "5059690800",
-                            "itemNm": "MAZUT",
-                            "bcd": None,
-                            "pkgUnitCd": "NT",
-                            "pkg": 10,
-                            "qtyUnitCd": "U",
-                            "qty": 10,
-                            "itemExprDt": None,
-                            "prc": 3500,
-                            "splyAmt": 35000,
-                            "totDcAmt": 0,
-                            "taxblAmt": 35000,
-                            "vatCatCd": "A",
-                            "iplCatCd": "IPL1",
-                            "tlCatCd": "TL",
-                            "exciseTxCatCd": "EXEEG",
-                            "vatAmt": 30508,
-                            "iplAmt": 30508,
-                            "tlAmt": 30508,
-                            "exciseTxAmt": 30508,
-                            "totAmt": 35000
+                            "itemCd": product_template.item_Cd or product.default_code or product.id,
+                            "rsdQty": updated_stock_qty  # Pass the updated stock quantity here
                         }
                     ]
                 }
+
+                print('Payload being sent:', json.dumps(payload_stock_master, indent=4))
+
+                try:
+                    response = requests.post("http://localhost:8085/stockMaster/saveStockMaster",
+                                             json=payload_stock_master)
+                    response.raise_for_status()
+                    result_msg_stock_master = response.json().get('resultMsg', 'No result message returned')
+
+                    picking.message_post(
+                        body="Save Stock Master API Response: %s, \nProduct Name: %s" % (
+                            result_msg_stock_master, product.display_name),
+                        subtype_id=self.env.ref('mail.mt_note').id
+                    )
+
+                    _logger.info(f'API Stock Master Response: {result_msg_stock_master}')
+                    print(f'API Stock Master Response: {result_msg_stock_master}')
+                except requests.exceptions.RequestException as e:
+                    _logger.error(f'API request failed: {e}')
+
+            elif picking.picking_type_id.code == 'outgoing':
+                payload_new_endpoint = {
+                    "tpin": "1018798746",
+                    "bhfId": "000",
+                    "sarNo": 2,
+                    "orgSarNo": 0,
+                    "regTyCd": "M",
+                    "custTpin": picking.partner_id.tpin or None,
+                    "custNm": picking.partner_id.name or None,
+                    "custBhfId": "000",
+                    "sarTyCd": "02",
+                    "ocrnDt": picking.scheduled_date.strftime("%Y%m%d") if picking.scheduled_date else "20200126",
+                    "totItemCnt": len(moves),
+                    "totTaxblAmt": round(total_taxable_amount, 2),
+                    "totTaxAmt": round(total_tax_amount, 2),
+                    "totAmt": round(total_amount, 2),
+                    "remark": picking.note or "purchase order",
+                    "regrId": picking.create_uid.name,
+                    "regrNm": picking.create_uid.name,
+                    "modrNm": picking.write_uid.name,
+                    "modrId": picking.write_uid.name,
+                    "itemList": item_list
+                }
+
+                print('Payload being sent:', json.dumps(payload_new_endpoint, indent=4))
 
                 try:
                     response = requests.post('http://localhost:8085/stock/saveStockItems', json=payload_new_endpoint)
                     response.raise_for_status()
                     result_msg_new_endpoint = response.json().get('resultMsg', 'No result message returned')
 
-                    # Post the result message to the chatter
                     picking.message_post(
-                        body="Save Stock API Response New Endpoint: %s, \nProduct Name: %s" % (result_msg_new_endpoint, move.product_id.display_name),
+                        body="Save Stock API Response New Endpoint: %s, \nProduct Name: %s" % (
+                            result_msg_new_endpoint, move.product_id.display_name),
                         subtype_id=self.env.ref('mail.mt_note').id
                     )
 
                     _logger.info(f'API New Endpoint Response: {result_msg_new_endpoint}')
-                    print(f' Save Stock Item API Endpoint Response: {result_msg_new_endpoint}')
+                    print(f'API New Endpoint Response: {result_msg_new_endpoint}')
                 except requests.exceptions.RequestException as e:
                     _logger.error(f'API request failed: {e}')
                     print(f'API request failed: {e}')
 
-                # Payload for the third API request
-                payload_stock = {
-                    "tpin": "1018798746",
-                    "bhfId": "000",
-                    "regrId": "Admin",
-                    "regrNm": "Admin",
-                    "modrNm": "Admin",
-                    "modrId": "Admin",
-                    "stockItemList": [
-                        {
-                            "itemCd": product.default_code or product.id,
-                            "rsdQty": new_qty
-                        }
-                    ]
-                }
-
-                try:
-                    response = requests.post('http://localhost:8085/stockMaster/saveStockMaster', json=payload_stock)
-                    response.raise_for_status()
-                    result_msg_stock = response.json().get('resultMsg', 'No result message received')
-                    _logger.info(f'Endpoint response: {result_msg_stock}')
-                    print(f'Stock Master Endpoint response: {result_msg_stock}')
-                except requests.exceptions.RequestException as e:
-                    result_msg_stock = str(e)
-                    _logger.error(f'Error during POST request: {result_msg_stock}')
-                    print(f'Error during POST request: {result_msg_stock}')
-
-                # Post the resultMsg to the chatter
-                picking.message_post(
-                    body='Quantity of product {} has been updated to {}. Endpoint response: {}'.format(product.display_name, new_qty, result_msg_stock),
-                    subtype_id=self.env.ref('mail.mt_note').id
-                )
-
-                _logger.info(f'Message posted for product: {product.display_name} on stock.picking')
-                print(f'Message posted for product: {product.display_name} on stock.picking')
-
-            _logger.info(f'Skipping picking with type: {picking.picking_type_id.code}')
-            print(f'Skipping picking with type: {picking.picking_type_id.code}')
+            _logger.info(f'Message posted for product: {product.display_name}')
+            print(f'Message posted for product: {product.display_name}')
 
         _logger.info('Exiting button_validate method.')
         print('Exiting button_validate method.')

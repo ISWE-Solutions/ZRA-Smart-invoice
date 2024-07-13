@@ -5,12 +5,14 @@ import requests
 _logger = logging.getLogger(__name__)
 
 
-class ResConfigSettings(models.TransientModel):
+class FetchDataSettings(models.TransientModel):
     _inherit = 'res.config.settings'
+    _name = 'fetch.data'
+    _description = 'Fetch data'
 
-    fetch_data_button = fields.Boolean(string="Fetch Data")
+    fetch_data_button = fields.Boolean(string="Fetch Data", default=False)
 
-    def fetch_data(self):
+    def fetch_data_action(self):
         self.env['zra.item.data'].fetch_and_store_classification_data()
         self.env['quantity.unit.data'].fetch_and_store_quantity_data()
         self.env['packaging.unit.data'].fetch_and_store_packaging_data()
@@ -31,7 +33,7 @@ class ResConfigSettings(models.TransientModel):
 class ZraItemData(models.Model):
     _name = 'zra.item.data'
     _description = 'ZRA Item Data'
-    _rec_name = 'itemClsNm'  # Specify the field to be used as the name
+    _rec_name = 'itemClsNm'
 
     itemClsCd = fields.Char(string='Item Classification Code')
     itemClsNm = fields.Char(string='Item Classification Name')
@@ -72,7 +74,7 @@ class ZraItemData(models.Model):
 class QuantityUnitData(models.Model):
     _name = 'quantity.unit.data'
     _description = 'Quantity Unit Data'
-    _rec_name = 'quantity_unit_cdNm'  # Specify the field to be used as the name
+    _rec_name = 'quantity_unit_cdNm'
 
     quantity_unit_cd = fields.Char(string='Quantity Unit Code')
     quantity_unit_cdNm = fields.Char(string='Quantity Unit Name')
@@ -106,7 +108,7 @@ class QuantityUnitData(models.Model):
 class PackagingUnitData(models.Model):
     _name = 'packaging.unit.data'
     _description = 'Packaging Unit Data'
-    _rec_name = 'packaging_unit_cdNm'  # Specify the field to be used as the name
+    _rec_name = 'packaging_unit_cdNm'
 
     packaging_unit_cd = fields.Char(string='Packaging Unit Code')
     packaging_unit_cdNm = fields.Char(string='Packaging Unit Name')
@@ -140,7 +142,7 @@ class PackagingUnitData(models.Model):
 class CountryData(models.Model):
     _name = 'country.data'
     _description = 'Country Data'
-    _rec_name = 'country_cdNm'  # Specify the field to be used as the name
+    _rec_name = 'country_cdNm'
 
     country_cd = fields.Char(string='Country Code')
     country_cdNm = fields.Char(string='Country Name')

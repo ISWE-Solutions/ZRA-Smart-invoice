@@ -1,18 +1,11 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
-from odoo.exceptions import ValidationError
 import requests
 import json
 import logging
 from datetime import datetime
 
 _logger = logging.getLogger(__name__)
-
-fetch_options_counter = 0
-fetch_purchase_data_counter = 0
-
-fetch_options_cache = None
-fetch_options_last_request = None
 
 
 class PurchaseData(models.Model):
@@ -43,71 +36,52 @@ class PurchaseData(models.Model):
     status = fields.Selection([
         ('draft', 'Draft'),
         ('confirmed', 'Confirmed'),
-        ('partial', 'Partial'),
         ('rejected', 'Rejected'),
     ], string='Status', default='draft')
 
     fetch_selection = fields.Selection(
         string='Select Data to Fetch',
-        selection='_get_fetch_options',
-        required=True,
+        selection='_get_fetch_options'
     )
 
-    def log_endpoint_hits(self):
-        print('Fetch Options Endpoint Hit Count: %d', fetch_options_counter)
-        print('Fetch Purchase Data Endpoint Hit Count: %d', fetch_purchase_data_counter)
-
+    @api.model
     def _get_fetch_options(self):
-        global fetch_options_counter, fetch_options_cache, fetch_options_last_request
+        url = "http://localhost:8085/trnsPurchase/selectTrnsPurchaseSales"
+        headers = {'Content-Type': 'application/json'}
+        payload = {
+            "tpin": "1018798746",
+            "bhfId": "000",
+            "lastReqDt": "20240105210300"
+        }
 
-        # Check if we have cached data and it is still valid
-        if fetch_options_cache is None or fetch_options_last_request != "20240105210300":
-            fetch_options_counter += 1
-            print('Fetch Options Endpoint Hit Count:', fetch_options_counter)
+        try:
+            response = requests.post(url, data=json.dumps(payload), headers=headers)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            _logger.error('Error fetching fetch options: %s', e)
+            return []
 
-            url = "http://localhost:8085/trnsPurchase/selectTrnsPurchaseSales"
-            headers = {'Content-Type': 'application/json'}
-            payload = {
-                "tpin": "1018798746",
-                "bhfId": "000",
-                "lastReqDt": "20240105210300"
-            }
+        try:
+            result = response.json()
+        except ValueError as e:
+            _logger.error('Error parsing JSON response: %s', e)
+            return []
 
-            try:
-                response = requests.post(url, data=json.dumps(payload), headers=headers)
-                response.raise_for_status()
-            except requests.exceptions.RequestException as e:
-                print('Error fetching fetch options:', e)
-                return []
-
-            try:
-                result = response.json()
-            except ValueError as e:
-                print('Error parsing JSON response:', e)
-                return []
-
-            if result.get('resultCd') == '000':
-                sale_list = result['data'].get('saleList', [])
-                existing_invoices = self.search([]).mapped('spplr_invc_no')
-                new_options = []
-                for sale in sale_list:
-                    if sale['spplrInvcNo'] and sale['spplrInvcNo'] not in existing_invoices:
-                        item_nm = sale['itemList'][0]['itemNm'] if sale['itemList'] else 'No Item'
-                        option_label = f"{sale['spplrNm']} - {sale['spplrTpin']} - {item_nm}"
-                        new_options.append((str(sale['spplrInvcNo']), option_label))
-                fetch_options_cache = new_options
-                fetch_options_last_request = "20240105210300"
-            else:
-                print('Failed to fetch data:', result.get('resultMsg'))
-                return []
-
-        return fetch_options_cache
+        if result.get('resultCd') == '000':
+            sale_list = result['data'].get('saleList', [])
+            existing_invoices = self.search([]).mapped('spplr_invc_no')
+            new_options = []
+            for sale in sale_list:
+                if sale['spplrInvcNo'] and sale['spplrInvcNo'] not in existing_invoices:
+                    item_nm = sale['itemList'][0]['itemNm'] if sale['itemList'] else 'No Item'
+                    option_label = f"{sale['spplrNm']} - {sale['spplrTpin']} - {item_nm}"
+                    new_options.append((str(sale['spplrInvcNo']), option_label))
+            return new_options
+        else:
+            _logger.error('Failed to fetch data: %s', result.get('resultMsg'))
+            return []
 
     def fetch_purchase_data(self):
-        global fetch_purchase_data_counter
-        fetch_purchase_data_counter += 1
-        print('Fetch Purchase Data Endpoint Hit Count:', fetch_purchase_data_counter)
-
         selected_option = self.fetch_selection
         if not selected_option:
             raise UserError(_('Please select an option to fetch data.'))
@@ -142,7 +116,6 @@ class PurchaseData(models.Model):
                     self.spplr_invc_no = sale['spplrInvcNo']
                     self.rcpt_ty_cd = sale['rcptTyCd']
                     self.pmt_ty_cd = sale['pmtTyCd']
-                    self.item_nm = sale['itemList'][0]['itemNm']
 
                     def parse_date(date_str):
                         if not date_str:
@@ -169,9 +142,7 @@ class PurchaseData(models.Model):
                         'item_cd': item['itemCd'],
                         'item_nm': item['itemNm'],
                         'qty': item['qty'],
-                        'fetched': item['qty'],
                         'prc': item['prc'],
-                        'vat_cat_cd': item['vatCatCd'],
                         'tot_amt': item['totAmt'],
                         'qty_unit_cd': item['qtyUnitCd'],
                         'item_cls_cd': item['itemClsCd'],
@@ -195,219 +166,118 @@ class PurchaseData(models.Model):
             'target': 'current',
         }
 
-    # To log the count whenever needed, you can add a separate method
-    def print_endpoint_hits(self):
-        print('Fetch Options Endpoint Hit Count:', fetch_options_counter)
-        print('Fetch Purchase Data Endpoint Hit Count:', fetch_purchase_data_counter)
+    def fetch_purchase_data(self):
+        selected_option = self.fetch_selection
+        if not selected_option:
+            raise UserError(_('Please select an option to fetch data.'))
 
-    def get_product_quantities(self):
-        product_quantities = {}
-        for item in self.item_list:
-            product_template = self.env['product.template'].search(
-                [('item_Cd', '=', item.item_cd), ('name', '=', item.item_nm)], limit=1)
-            if product_template:
-                product = self.env['product.product'].search([('product_tmpl_id', '=', product_template.id)], limit=1)
-                if product:
-                    stock_quant = self.env['stock.quant'].search(
-                        [('product_id', '=', product.id), ('location_id', '=', self.location_id.id)], limit=1)
-                    quantity = stock_quant.quantity if stock_quant else 0
-                    product_quantities[(item.item_cd, item.item_nm)] = quantity
-                    print(f"Product Name: {item.item_nm}, Item Code: {item.item_cd}, Quantity: {quantity}")
-                else:
-                    product_quantities[(item.item_cd, item.item_nm)] = 0
-                    print(f"Product Name: {item.item_nm}, Item Code: {item.item_cd}, Quantity: 0")
-            else:
-                product_quantities[(item.item_cd, item.item_nm)] = 0
-                print(f"Product Name: {item.item_nm}, Item Code: {item.item_cd}, Quantity: 0")
+        payload = {
+            "tpin": "1018798746",
+            "bhfId": "000",
+            "lastReqDt": "20240105210300"
+        }
 
-        return product_quantities
+        url = "http://localhost:8085/trnsPurchase/selectTrnsPurchaseSales"
+        headers = {'Content-Type': 'application/json'}
 
-    def get_total_quantities(self):
-        product_quantities = {}
-        for item in self.item_list:
-            product_template = self.env['product.template'].search(
-                [('item_Cd', '=', item.item_cd), ('name', '=', item.item_nm)], limit=1)
-            if product_template:
-                product = self.env['product.product'].search([('product_tmpl_id', '=', product_template.id)], limit=1)
-                if product:
-                    stock_quant = self.env['stock.quant'].search(
-                        [('product_id', '=', product.id), ('location_id', '=', self.location_id.id)], limit=1)
-                    quantity = stock_quant.quantity if stock_quant else 0
-                    product_quantities[(item.item_cd, item.item_nm)] = quantity + item.qty
-                    print(
-                        f"Product Name: {item.item_nm}, Item Code: {item.item_cd}, Quantity: {quantity}, Total: {quantity + item.qty}")
-                else:
-                    product_quantities[(item.item_cd, item.item_nm)] = item.qty
-                    print(f"Product Name: {item.item_nm}, Item Code: {item.item_cd}, Quantity: 0, Total: {item.qty}")
-            else:
-                product_quantities[(item.item_cd, item.item_nm)] = item.qty
-                print(f"Product Name: {item.item_nm}, Item Code: {item.item_cd}, Quantity: 0, Total: {item.qty}")
+        try:
+            response = requests.post(url, data=json.dumps(payload), headers=headers)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise UserError(_('Failed to fetch data from the endpoint: %s') % e)
 
-        return product_quantities
+        try:
+            result = response.json()
+        except ValueError as e:
+            raise UserError(_('Failed to parse response from the endpoint: %s') % e)
+
+        if result.get('resultCd') == '000':
+            selected_invoice_number = int(selected_option)
+            for sale in result['data']['saleList']:
+                if sale['spplrInvcNo'] == selected_invoice_number:
+                    self.spplr_tpin = sale['spplrTpin']
+                    self.spplr_nm = sale['spplrNm']
+                    self.spplr_bhf_id = sale['spplrBhfId']
+                    self.spplr_invc_no = sale['spplrInvcNo']
+                    self.rcpt_ty_cd = sale['rcptTyCd']
+                    self.pmt_ty_cd = sale['pmtTyCd']
+
+                    def parse_date(date_str):
+                        if not date_str:
+                            return None
+                        for fmt in ('%Y%m%d%H%M%S', '%Y-%m-%d %H:%M:%S', '%Y%m%d'):
+                            try:
+                                return datetime.strptime(date_str, fmt)
+                            except ValueError:
+                                pass
+                        raise ValueError(f"Date format for {date_str} is not supported")
+
+                    self.cfm_dt = parse_date(sale['cfmDt']) if sale.get('cfmDt') else None
+                    self.sales_dt = parse_date(sale['salesDt']).date() if sale.get('salesDt') else None
+                    self.stock_rls_dt = parse_date(sale['stockRlsDt']) if sale.get('stockRlsDt') else None
+
+                    self.tot_item_cnt = sale['totItemCnt']
+                    self.tot_taxbl_amt = sale['totTaxblAmt']
+                    self.tot_tax_amt = sale['totTaxAmt']
+                    self.tot_amt = sale['totAmt']
+                    self.remark = sale.get('remark', '')
+
+                    items = [(0, 0, {
+                        'item_seq': item['itemSeq'],
+                        'item_cd': item['itemCd'],
+                        'item_nm': item['itemNm'],
+                        'qty': item['qty'],
+                        'prc': item['prc'],
+                        'tot_amt': item['totAmt'],
+                        'qty_unit_cd': item['qtyUnitCd'],
+                        'item_cls_cd': item['itemClsCd'],
+                        'pkg_unit_cd': item['pkgUnitCd'],
+                    }) for item in sale['itemList']]
+                    self.item_list = items
+                    self.fetched = True
+                    break
+        else:
+            raise UserError(_('Failed to fetch data: %s') % result.get('resultMsg'))
+
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Purchase Data',
+            'view_mode': 'tree,form',
+            'res_model': 'purchase.data',
+            'views': [
+                (self.env.ref('zra_smart_invoice.view_purchase_data_tree').id, 'tree'),
+                (self.env.ref('zra_smart_invoice.view_purchase_data_form').id, 'form')
+            ],
+            'target': 'current',
+        }
 
     def confirm_invoice(self):
 
-        global fetch_options_cache, fetch_options_last_request
-
-        fetch_options_cache = None
-        fetch_options_last_request = None
-        self.ensure_one()
-
-        if not self.item_list:
-            raise UserError(_('No items to confirm.'))
-
-        all_confirmed = True
-        all_rejected = True
-        io_confirmed_items = []
-        io_rejected_items = []
-        confirmed_items = []
-        rejected_items = []
-        confirmed_stock_items = []
-        rejected_stock_items = []
-        confirmed_io_items = []
-        rejected_io_items = []
-
-        product_quantities = self.get_product_quantities()
-
-        for item in self.item_list:
-            confirmed_qty = item.qty
-            fetched_qty = item.fetched
-            rejected_qty = fetched_qty - confirmed_qty
-
-            # Get the existing quantity using both item_cd and name
-            existing_qty = product_quantities.get((item.item_cd, item.item_nm), 0)
-
-            # Calculate the total quantity
-            total_qty = existing_qty + confirmed_qty
-
-            print(
-                f"Fetched: {fetched_qty}, Confirmed: {confirmed_qty}, Rejected: {rejected_qty}, Existing: {existing_qty}, Total: {total_qty}")
-
-            if confirmed_qty == 0:
-                rejected_items.append(item)
-                io_rejected_items.append(item)
-            else:
-                confirmed_items.append(item)
-                io_confirmed_items.append(item)
-                confirmed_stock_items.append({
-                    "itemCd": item.item_cd,
-                    "rsdQty": total_qty
-                })
-
-                confirmed_io_items.append({
-                    "itemSeq": item.item_seq,
-                    "itemCd": item.item_cd,
-                    "itemClsCd": item.item_cls_cd,
-                    "itemNm": item.item_nm,
-                    "bcd": item.bcd,
-                    "pkgUnitCd": item.pkg_unit_cd if item.pkg_unit_cd else 'NT',
-                    "pkg": item.pkg,
-                    "qtyUnitCd": item.qty_unit_cd if item.qty_unit_cd else 'U',
-                    "qty": confirmed_qty or item.qty,
-                    "itemExprDt": item.item_expr_dt if item.item_expr_dt else None,
-                    "prc": item.prc,
-                    "splyAmt": item.sply_amt,
-                    "totDcAmt": item.tot_dc_amt,
-                    "taxblAmt": item.taxbl_amt if item.taxbl_amt else 0,
-                    "vatCatCd": item.vat_cat_cd if item.vat_cat_cd else 'A',
-                    "iplCatCd": item.ipl_cat_cd if item.ipl_cat_cd else 'IPL1',
-                    "tlCatCd": item.tl_cat_cd if item.tl_cat_cd else 'TL',
-                    "exciseTxCatCd": item.excise_tx_cat_cd if item.excise_tx_cat_cd else 'EXEEG',
-                    "vatAmt": item.vat_amt,
-                    "iplAmt": item.ipl_amt,
-                    "tlAmt": item.tl_amt,
-                    "exciseTxAmt": item.excise_tx_amt,
-                    "taxAmt": item.tax_amt if item.tax_amt else 16,
-                    "totAmt": item.tot_amt
-                })
-
-                all_rejected = False
-
-            if rejected_qty > 0:
-                rejected_items.append(item)
-                io_rejected_items.append(item)
-                rejected_stock_items.append({
-                    "itemCd": item.item_cd,
-                    "rsdQty": rejected_qty
-                })
-
-                rejected_io_items.append({
-                    "itemSeq": item.item_seq,
-                    "itemCd": item.item_cd,
-                    "itemClsCd": item.item_cls_cd,
-                    "itemNm": item.item_nm,
-                    "bcd": item.bcd,
-                    "pkgUnitCd": item.pkg_unit_cd if item.pkg_unit_cd else 'NT',
-                    "pkg": item.pkg,
-                    "qtyUnitCd": item.qty_unit_cd if item.qty_unit_cd else 'U',
-                    "qty": rejected_qty or item.qty,
-                    "itemExprDt": item.item_expr_dt if item.item_expr_dt else None,
-                    "prc": item.prc,
-                    "splyAmt": item.sply_amt,
-                    "totDcAmt": item.tot_dc_amt,
-                    "taxblAmt": item.taxbl_amt if item.taxbl_amt else 0,
-                    "vatCatCd": item.vat_cat_cd if item.vat_cat_cd else 'A',
-                    "iplCatCd": item.ipl_cat_cd if item.ipl_cat_cd else 'IPL1',
-                    "tlCatCd": item.tl_cat_cd if item.tl_cat_cd else 'TL',
-                    "exciseTxCatCd": item.excise_tx_cat_cd if item.excise_tx_cat_cd else 'EXEEG',
-                    "vatAmt": item.vat_amt,
-                    "iplAmt": item.ipl_amt,
-                    "tlAmt": item.tl_amt,
-                    "exciseTxAmt": item.excise_tx_amt,
-                    "taxAmt": item.tax_amt if item.tax_amt else 16,
-                    "totAmt": item.tot_amt
-                })
-
-                all_confirmed = False
-
-        if all_confirmed:
-            print('All items are confirmed.')
-            self._save_purchase()
-            self._save_item_full_confirmed()
-            self._save_stock_master_full_confirmed()
-            self.status = 'confirmed'
-        elif all_rejected:
-            print('All items are rejected.')
-            self._reject_purchase()
-            self.status = 'rejected'
-        else:
-            print('Partial confirmation.')
-            self._save_purchase()
-            self._reject_purchase()
-
-            # print("Saving confirmed items with stock master payload:")
-            self._save_item(confirmed_io_items)
-
-            # print("Saving rejected items with stock master payload:")
-            self._save_item(rejected_io_items)
-
-            # print("Saving confirmed items with stock master payload:")
-            self._save_stock_master(confirmed_stock_items)
-
-            # print("Saving rejected items with stock master payload:")
-            self._save_stock_master(rejected_stock_items)
-
-            self.status = 'partial'
-
-        self.create_or_update_products()
+        self._save_purchase()
+        self._save_item()
+        self._save_stock_master()
+        self.status = 'confirmed'
 
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': _('Success'),
-                'message': _('Purchase Validated for supplier invoice no: %s') % self.spplr_invc_no,
+                'message': _('Invoice confirmed for supplier invoice no: %s') % self.spplr_invc_no,
                 'sticky': False,
             }
         }
 
     def create_or_update_products(self):
+        # _logger.info('Confirming invoice for supplier invoice no: %s', self.spplr_invc_no)
 
         # Ensure location is set
         if not self.location_id:
             # Check if any locations exist
             all_locations = self.env['stock.location'].search([])
             if not all_locations:
+                # _logger.warning('No locations found in the system. Creating a default location.')
+
                 # Create a default location if none exist
                 location_vals = {
                     'name': 'WH/Stock',
@@ -416,9 +286,13 @@ class PurchaseData(models.Model):
                     'usage': 'internal',
                 }
                 location = self.env['stock.location'].create(location_vals)
+                # _logger.info('Created default location %s (ID: %s)', location.name, location.id)
             else:
+                # Search for a default location by name
                 location = self.env['stock.location'].search([('name', '=', 'WH/Stock')], limit=1)
                 if not location:
+                    # _logger.warning('Default location "WH/Stock" not found. Creating it.')
+
                     # Create the default location if it doesn't exist
                     location_vals = {
                         'name': 'WH/Stock',
@@ -427,8 +301,10 @@ class PurchaseData(models.Model):
                         'usage': 'internal',
                     }
                     location = self.env['stock.location'].create(location_vals)
+                    # _logger.info('Created default location %s (ID: %s)', location.name, location.id)
 
             self.location_id = location.id
+            # _logger.info('Location automatically set to %s (ID: %s)', location.name, location.id)
 
         product_category = self.env.ref('product.product_category_all')
         if not product_category:
@@ -451,16 +327,19 @@ class PurchaseData(models.Model):
                         _logger.info('Updated quantity for product %s to %s', product_template.name,
                                      stock_quant.quantity)
                     else:
-
+                        # If no quant exists, create one
                         StockQuant.create({
                             'product_id': product.id,
                             'location_id': self.location_id.id,
                             'quantity': item.qty,
                         })
+                        # _logger.info('Created new stock quant for product %s with quantity %s', product_template.name,
+                        #              item.qty)
             else:
                 try:
                     new_product_template_vals = {
                         'name': item.item_nm,
+                        'default_code': item.item_cd,
                         'type': 'product',
                         'categ_id': product_category.id,
                         'list_price': item.prc,
@@ -471,6 +350,7 @@ class PurchaseData(models.Model):
                         'cd': 'ZM',
                         'use_yn': 'Y',
                     }
+                    # _logger.info('Creating new product template with values: %s', new_product_template_vals)
 
                     new_product_template = self.env['product.template'].create(new_product_template_vals)
                     new_product = self.env['product.product'].search(
@@ -482,24 +362,18 @@ class PurchaseData(models.Model):
                         'location_id': self.location_id.id,
                         'quantity': item.qty,
                     })
-
+                    # _logger.info('Created new product template %s with initial quantity %s', new_product_template.name,
+                    #              item.qty)
                 except Exception as e:
                     _logger.error('Error creating product: %s', str(e))
                     raise UserError(_('Error creating product: %s') % str(e))
 
     def reject_purchase(self):
         self._reject_purchase()
-        # self.status = 'rejected'
+        self.status = 'rejected'
         _logger.info('Invoice confirmed for supplier invoice no: %s', self.spplr_invc_no)
 
-    def _reject_purchase(self, item=None):
-        if not self.item_list:
-            raise UserError(_('No items to confirm.'))
-
-        confirmed_qty = sum(item.qty for item in self.item_list)
-        fetched_qty = sum(item.fetched for item in self.item_list)
-        rejected_qty = fetched_qty - confirmed_qty
-
+    def _reject_purchase(self):
         url = "http://localhost:8085/trnsPurchase/savePurchase"
         headers = {'Content-Type': 'application/json'}
         payload = {
@@ -564,7 +438,7 @@ class PurchaseData(models.Model):
         try:
             response = requests.post(url, data=json.dumps(payload), headers=headers)
             response.raise_for_status()
-            print('Purchase Rejected successfully:', response.json())
+            print('Purchase saved successfully:', response.json())
         except requests.exceptions.RequestException as e:
             _logger.error('Error saving purchase: %s', e)
             if e.response:
@@ -572,11 +446,6 @@ class PurchaseData(models.Model):
             raise UserError(_('Error Check Network/internet Connectivity.'))
 
     def _save_purchase(self):
-        if not self.item_list:
-            raise UserError(_('No items to confirm.'))
-
-        confirmed_qty = sum(item.qty for item in self.item_list)
-
         url = "http://localhost:8085/trnsPurchase/savePurchase"
         headers = {'Content-Type': 'application/json'}
         payload = {
@@ -648,68 +517,13 @@ class PurchaseData(models.Model):
                 _logger.error('Response content: %s', e.response.content.decode())
             raise UserError(_('Error Check Network/internet Connectivity.'))
 
-    def _save_item(self, stock_items):
+    def _save_item(self):
         url = "http://localhost:8085/stock/saveStockItems"
         headers = {'Content-Type': 'application/json'}
         payload = {
             "tpin": "1018798746",
             "bhfId": "000",
-            "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
-            "orgSarNo": 0,
-            "regTyCd": "M",
-            "custTpin": None,
-            "custNm": None,
-            "custBhfId": self.spplr_bhf_id,
-            "sarTyCd": "02",
-            "ocrnDt": self.sales_dt.strftime('%Y%m%d'),
-            "totItemCnt": len(self.item_list),
-            "totTaxblAmt": self.tot_taxbl_amt,
-            "totTaxAmt": self.tot_tax_amt,
-            "totAmt": self.tot_amt,
-            "remark": self.remark or "",
-            "regrId": self.create_uid.id,
-            "regrNm": self.create_uid.name,
-            "modrNm": self.create_uid.name,
-            "modrId": self.create_uid.id,
-            "itemList": stock_items
-        }
-        # print('Payload being sent:', json.dumps(payload, indent=4))
-        try:
-            response = requests.post(url, data=json.dumps(payload), headers=headers)
-            response.raise_for_status()
-            print('Stock items saved successfully:', response.json())
-        except requests.exceptions.RequestException as e:
-            print('Stock items failed:', response.json())
-            _logger.error('Error saving stock items: %s', e)
-            raise UserError(_('Failed to save stock items.'))
-
-    def _save_stock_master(self, stock_items):
-        payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
-            "regrId": self.create_uid.id,
-            "regrNm": self.create_uid.name,
-            "modrNm": self.create_uid.name,
-            "modrId": self.create_uid.id,
-            "stockItemList": stock_items
-        }
-        # print("Stock master Payload being sent:", json.dumps(payload, indent=4))
-        try:
-            response = requests.post("http://localhost:8085/stockMaster/saveStockMaster", data=json.dumps(payload),
-                                     headers={'Content-Type': 'application/json'})
-            response.raise_for_status()
-            print('Stock master saved successfully:', response.json())
-        except requests.exceptions.RequestException as e:
-            _logger.error('Error saving stock master: %s', e)
-            raise UserError(_('Failed to save stock master data.'))
-
-    def _save_item_full_confirmed(self):
-        url = "http://localhost:8085/stock/saveStockItems"
-        headers = {'Content-Type': 'application/json'}
-        payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
-            "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
+            "sarNo": 1,
             "orgSarNo": 0,
             "regTyCd": "M",
             "custTpin": None,
@@ -740,8 +554,8 @@ class PurchaseData(models.Model):
                 "prc": item.prc,
                 "splyAmt": item.sply_amt,
                 "totDcAmt": item.tot_dc_amt,
-                "taxblAmt": item.taxbl_amt if item.taxbl_amt else 0,
-                "vatCatCd": item.vat_cat_cd if item.vat_cat_cd else 'A',
+                "taxblAmt": item.taxbl_amt if item.ipl_cat_cd else 0,
+                "vatCatCd": item.vat_cat_cd if item.ipl_cat_cd else 'A',
                 "iplCatCd": item.ipl_cat_cd if item.ipl_cat_cd else 'IPL1',
                 "tlCatCd": item.tl_cat_cd if item.tl_cat_cd else 'TL',
                 "exciseTxCatCd": item.excise_tx_cat_cd if item.excise_tx_cat_cd else 'EXEEG',
@@ -753,7 +567,7 @@ class PurchaseData(models.Model):
                 "totAmt": item.tot_amt
             } for item in self.item_list]
         }
-        # print('Payload being sent:', json.dumps(payload, indent=4))
+        print('Payload being sent:', json.dumps(payload, indent=4))
         try:
             response = requests.post(url, data=json.dumps(payload), headers=headers)
             response.raise_for_status()
@@ -763,12 +577,9 @@ class PurchaseData(models.Model):
             _logger.error('Error saving stock items: %s', e)
             raise UserError(_('Failed to save stock items.'))
 
-    def _save_stock_master_full_confirmed(self):
+    def _save_stock_master(self):
         url = "http://localhost:8085/stockMaster/saveStockMaster"
         headers = {'Content-Type': 'application/json'}
-
-        total_quantities = self.get_total_quantities()
-
         payload = {
             "tpin": "1018798746",
             "bhfId": "000",
@@ -778,11 +589,10 @@ class PurchaseData(models.Model):
             "modrId": self.create_uid.id,
             "stockItemList": [{
                 "itemCd": item.item_cd,
-                "rsdQty": total_quantities.get((item.item_cd, item.item_nm), item.qty),
+                "rsdQty": item.qty
             } for item in self.item_list]
         }
-
-        # print('Stock master Payload being sent:', json.dumps(payload, indent=4))
+        print('Payload being sent:', json.dumps(payload, indent=4))
         try:
             response = requests.post(url, data=json.dumps(payload), headers=headers)
             response.raise_for_status()
@@ -800,8 +610,7 @@ class PurchaseItem(models.Model):
     item_seq = fields.Integer(string='Item Sequence')
     item_cd = fields.Char(string='Item Code')
     item_nm = fields.Char(string='Item Name')
-    qty = fields.Float(string='Accepted Quantity')
-    fetched = fields.Integer(string='Received Quantity')
+    qty = fields.Float(string='Quantity')
     prc = fields.Float(string='Price')
     sply_amt = fields.Float(string='Supply Amount')
     dc_rt = fields.Float(string='Discount Rate')
@@ -831,14 +640,6 @@ class PurchaseItem(models.Model):
     bcd = fields.Char(string='bcd')
     taxbl_amt = fields.Char(string='taxbl_amt')
     item_nms = fields.Char(string='item name ')
-
-    @api.constrains('qty')
-    def _check_qty(self):
-        for record in self:
-            if record.qty < 0:
-                raise ValidationError("Accepted Quantity cannot be less than 0.")
-            if record.qty > record.fetched:
-                raise ValidationError("Accepted Quantity cannot be greater than Received Quantity.")
 
 
 class ProductProduct(models.Model):

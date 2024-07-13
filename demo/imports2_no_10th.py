@@ -77,16 +77,17 @@ class ImportData(models.Model):
 
     @api.model
     def _compute_fetch_selection(self):
-        global compute_fetch_selection_cache, compute_fetch_selection_last_request
+        global compute_fetch_selection_counter, compute_fetch_selection_cache, compute_fetch_selection_last_request
 
-        current_request_time = "20240105210300"
+        if compute_fetch_selection_cache is None or compute_fetch_selection_last_request != "20240105210300":
+            compute_fetch_selection_counter += 1
+            print('Compute Fetch Selection Endpoint Hit Count:', compute_fetch_selection_counter)
 
-        if compute_fetch_selection_cache is None or compute_fetch_selection_last_request != current_request_time:
             api_url = "http://localhost:8085/imports/selectImportItems"
             payload = {
                 "tpin": "1018798746",
                 "bhfId": "000",
-                "lastReqDt": current_request_time
+                "lastReqDt": "20240105210300"
             }
 
             try:
@@ -113,7 +114,7 @@ class ImportData(models.Model):
             ]
 
             compute_fetch_selection_cache = selection_data
-            compute_fetch_selection_last_request = current_request_time
+            compute_fetch_selection_last_request = "20240105210300"
 
         return compute_fetch_selection_cache
 
@@ -123,38 +124,57 @@ class ImportData(models.Model):
             self.fetch_import_data()
 
     def fetch_import_data(self):
+        global fetch_import_data_counter
+        fetch_import_data_counter += 1
+        print('Fetch Import Data Endpoint Hit Count:', fetch_import_data_counter)
+
         if not self.fetch_selection:
             raise UserError(_('No selection made.'))
 
         task_cd, item_seq = self.fetch_selection.split('_')
 
-        if compute_fetch_selection_cache is None:
-            self._compute_fetch_selection()  # Fetch data if cache is empty
-
-        # Find the selected item in the cached data
-        selected_item = next(
-            (item for item in compute_fetch_selection_cache if
-             str(item[0].split('_')[0]) == task_cd and str(item[0].split('_')[1]) == item_seq),
-            None
-        )
-
-        if not selected_item:
-            raise UserError(_('Selected item not found in the fetched data.'))
-
-        # Call the method to create or update the selected item
-        self.create_or_update_import_data(selected_item)
-
-        return {
-            'type': 'ir.actions.act_window',
-            'name': 'Import Data',
-            'res_model': 'import.data',
-            'view_mode': 'tree,form',
-            'views': [
-                (self.env.ref('zra_smart_invoice.view_import_data_tree').id, 'tree'),
-                (self.env.ref('zra_smart_invoice.view_import_data_form').id, 'form')
-            ],
-            'target': 'current',
+        api_url = "http://localhost:8085/imports/selectImportItems"
+        payload = {
+            "tpin": "1018798746",
+            "bhfId": "000",
+            "lastReqDt": "20240105210300"
         }
+
+        try:
+            response = requests.post(api_url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get('resultCd') != '000':
+                raise UserError(_('Error fetching data: %s') % data.get('resultMsg'))
+
+            item_list = data.get('data', {}).get('itemList', [])
+
+            # Filter items based on the selected task_cd and item_seq
+            selected_item = next(
+                (item for item in item_list if str(item['taskCd']) == task_cd and str(item['itemSeq']) == item_seq),
+                None
+            )
+
+            if not selected_item:
+                raise UserError(_('Selected item not found in the fetched data.'))
+
+            # Create or update the selected item
+            self.create_or_update_import_data(selected_item)
+
+            return {
+                'type': 'ir.actions.act_window',
+                'name': 'Import Data',
+                'res_model': 'import.data',
+                'view_mode': 'tree,form',
+                'views': [
+                    (self.env.ref('zra_smart_invoice.view_import_data_tree').id, 'tree'),
+                    (self.env.ref('zra_smart_invoice.view_import_data_form').id, 'form')
+                ],
+                'target': 'current',
+            }
+        except requests.exceptions.RequestException as e:
+            raise UserError(_('Failed to fetch data: %s') % e)
 
     def print_endpoint_hits(self):
         print('Compute Fetch Selection Endpoint Hit Count:', compute_fetch_selection_counter)

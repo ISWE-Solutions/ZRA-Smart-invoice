@@ -21,7 +21,7 @@ class AccountMoveReversal(models.TransientModel):
             "pmtTyCd": "01",
             "salesSttsCd": "02",
             "cfmDt": "20240502102010",
-            "salesDt": "20240502",
+            "salesDt": "20240621",
             "stockRlsDt": None,
             "cnclReqDt": None,
             "cnclDt": None,

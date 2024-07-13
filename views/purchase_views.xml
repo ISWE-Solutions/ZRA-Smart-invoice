@@ -5,38 +5,48 @@
             <field name="name">purchase.data.form</field>
             <field name="model">purchase.data</field>
             <field name="arch" type="xml">
-                <form>
+                <form create="false">
                     <header>
-                        <button name="confirm_invoice" type="object" string="Confirm Invoice" class="oe_highlight"/>
+                        <button name="confirm_invoice" type="object" string="Validate purchase"
+                                class="oe_highlight btn btn-primary"
+                                confirm="Are you sure you want to Validate the purchase?"
+
+                                />
+<!--                        <button name="reject_purchase" type="object" string="Reject Purchase"-->
+<!--                                class="oe_highlight btn btn-danger"-->
+<!--                                confirm="Are you sure you want to reject the Purchase?"-->
+<!--                                invisible="status != 'draft'"/>-->
                     </header>
                     <sheet>
                         <group>
-                            <field name="spplr_tpin"/>
-                            <field name="spplr_nm"/>
-                            <field name="spplr_bhf_id"/>
-                            <field name="spplr_invc_no" options="{'no_create': True, 'no_open': True}"/>
-                            <field name="rcpt_ty_cd"/>
-                            <field name="pmt_ty_cd"/>
-                            <field name="cfm_dt"/>
-                            <field name="sales_dt"/>
-                            <field name="stock_rls_dt"/>
-                            <field name="tot_item_cnt"/>
-                            <field name="tot_taxbl_amt"/>
-                            <field name="tot_tax_amt"/>
-                            <field name="tot_amt"/>
-                            <field name="remark"/>
-                            <field name="fetched"/>
+                            <field name="spplr_tpin" readonly="1"/>
+                            <field name="spplr_nm" readonly="1"/>
+                            <field name="spplr_bhf_id" readonly="1"/>
+                            <field name="spplr_invc_no" options="{'no_create': True, 'no_open': True}" readonly="1"/>
+                            <field name="rcpt_ty_cd" readonly="1"/>
+                            <field name="pmt_ty_cd" readonly="1"/>
+                            <field name="cfm_dt" readonly="1"/>
+                            <field name="sales_dt" readonly="1"/>
+                            <field name="stock_rls_dt" readonly="1"/>
+                            <field name="tot_item_cnt" readonly="1"/>
+                            <field name="tot_taxbl_amt" readonly="1"/>
+                            <field name="item_nm" readonly="1"/>
+                            <field name="tot_tax_amt" readonly="1"/>
+                            <field name="tot_amt" readonly="1"/>
+                            <field name="remark" required="1"/>
+                            <field name="status" readonly="1"/>
                         </group>
                         <notebook>
                             <page string="Items">
                                 <field name="item_list">
-                                    <tree editable="bottom">
-                                        <field name="item_seq"/>
-                                        <field name="item_cd"/>
-                                        <field name="item_nm"/>
-                                        <field name="qty"/>
-                                        <field name="prc"/>
-                                        <field name="tot_amt"/>
+                                    <tree editable="bottom" delete="false" create="True">
+                                        <field name="item_seq" readonly="0"/>
+                                        <field name="item_cd" readonly="0"/>
+                                        <field name="item_nm" readonly="0"/>
+                                        <field name="prc" readonly="1"/>
+                                        <field name="tot_amt" readonly="1"/>
+                                        <field name="fetched" readonly="1"/>
+                                        <field name="qty" />
                                     </tree>
                                 </field>
                             </page>
@@ -46,12 +56,13 @@
             </field>
         </record>
 
+
         <!-- Simplified Form View -->
         <record id="view_purchase_data_simple_form" model="ir.ui.view">
             <field name="name">purchase.data.simple.form</field>
             <field name="model">purchase.data</field>
             <field name="arch" type="xml">
-                <form>
+                <form create="false">
                     <header>
                         <button name="fetch_purchase_data" type="object" string="Fetch Data" class="oe_highlight"/>
                     </header>
@@ -64,20 +75,37 @@
             </field>
         </record>
 
-        <!-- Tree View -->
+        <record id="view_purchase_item_tree" model="ir.ui.view">
+            <field name="name">purchase.item.tree</field>
+            <field name="model">purchase.item</field>
+            <field name="arch" type="xml">
+                <tree>
+                    <field name="item_seq"/>
+                    <field name="item_cd"/>
+                    <field name="qty"/>
+                    <field name="prc"/>
+                    <field name="tot_amt"/>
+                </tree>
+            </field>
+        </record>
+
         <record id="view_purchase_data_tree" model="ir.ui.view">
             <field name="name">purchase.data.tree</field>
             <field name="model">purchase.data</field>
             <field name="arch" type="xml">
-                <tree create="Create Purchase Data">
+                <tree create="false" decoration-success="status == 'confirmed'" decoration-danger="status == 'rejected'"
+                      decoration-warning="status == 'partial'">
+                    <field name="item_nm"/>
                     <field name="spplr_tpin"/>
                     <field name="spplr_nm"/>
                     <field name="spplr_invc_no"/>
                     <field name="tot_amt"/>
-                    <field name="fetched"/>
+                    <field name="sales_dt"/>
+                    <field name="status"/>
                 </tree>
             </field>
         </record>
+
 
         <!-- Action for Original Form View -->
         <record id="action_purchase_data" model="ir.actions.act_window">
@@ -95,15 +123,23 @@
             <field name="view_id" ref="view_purchase_data_simple_form"/>
         </record>
 
+        <record id="action_purchase_data_tree" model="ir.actions.act_window">
+            <field name="name">Purchase Data</field>
+            <field name="res_model">purchase.data</field>
+            <field name="view_mode">tree,form</field>
+            <field name="view_id" ref="view_purchase_data_tree"/>
+        </record>
+
+
         <!-- Parent Menu Item -->
-        <menuitem id="menu_select_si_purchase" name="Select SI Purchase" parent="stock.menu_stock_root"/>
+        <menuitem id="menu_select_si_purchase" name="ZRA SI Purchase" parent="purchase.menu_purchase_root"/>
 
         <!-- Sub Menu Item for Detailed Form -->
-        <menuitem id="menu_select_si_purchase_detailed" name="Detailed Form" parent="menu_select_si_purchase"
+        <menuitem id="menu_select_si_purchase_detailed" name="View Purchase" parent="menu_select_si_purchase"
                   action="action_purchase_data"/>
 
         <!-- Sub Menu Item for Simplified Form -->
-        <menuitem id="menu_select_si_purchase_simple" name="Simplified Form" parent="menu_select_si_purchase"
+        <menuitem id="menu_select_si_purchase_simple" name="Check Si Purchase" parent="menu_select_si_purchase"
                   action="action_purchase_data_simple"/>
     </data>
 </odoo>

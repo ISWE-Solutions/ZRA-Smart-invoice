@@ -18,17 +18,21 @@ Intergration with Zra smart invoice system
     'version': '0.1',
 
     # any module necessary for this one to work correctly
-    'depends': ['base', 'product', 'bus', 'account', 'sale', 'mail', 'stock','web'],
+    'depends': ['base', 'product', 'bus', 'account', 'sale', 'mail', 'stock', 'web', 'mrp'],
 
     # always loaded
     'data': [
         'security/ir.model.access.csv',
-        # 'views/menu_view.xml',
+        'views/import_view.xml',
         'views/purchase_views.xml',
         'views/views.xml',
         'views/templates.xml',
         'views/product_template_views.xml',
-        # 'data/tax_types_data.xml',
+        'views/contacts.xml',
+        'views/sales.xml',
+        'views/fetch_data_view.xml',
+        # 'views/menu_items.xml',
+        'data/tax_types_data.xml',
     ],
     # only loaded in demonstration mode
     'demo': [
