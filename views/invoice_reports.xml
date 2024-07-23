@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--custom_invoice_report.xml-->
+<odoo>
+    <data>
+        <template id="report_invoice_document_custom" inherit_id="account.report_invoice_document">
+            <xpath expr="//div[@class='oe_structure']" position="before">
+                <t t-esc="o.is_printed and 'Copy' or 'Original'">
+                    <span t-esc="Zaso"/>
+                </t>
+                <div t-if="o.rcpt_no">
+                    <strong>Receipt Number:</strong>
+                    <span t-esc="o.rcpt_no"/>
+                </div>
+                <div t-if="o.lpo">
+                    <strong>LPO:</strong>
+                    <span t-esc="o.lpo"/>
+                </div>
+                <div t-if="o.export_country_name">
+                    <strong>Export Country:</strong>
+                    <span t-esc="o.export_country_name"/>
+                </div>
+                <div t-if="o.move_type == 'out_refund' and o.reversal_reason_text">
+                    <strong>Refund Reason:</strong>
+                    <span t-esc="o.reversal_reason_text"/>
+                </div>
+                <div t-if="o.move_type == 'in_refund' and o.debit_note_reason_text">
+                    <strong>Debit Note Reason:</strong>
+                    <span t-esc="o.debit_note_reason_text"/>
+                </div>
+            </xpath>
+
+            <xpath expr="//div[@id='informations']/div[@t-attf-class]" position="replace">
+                <div t-attf-class="#{'col-auto col-3 mw-100' if report_type != 'html' else 'col'} mb-2"
+                     t-if="o.invoice_date" name="invoice_date">
+                    <t t-if="o.move_type == 'out_invoice'">
+                        <strong>Invoice Date:</strong>
+                    </t>
+                    <t t-elif="o.move_type == 'out_refund'">
+                        <strong>Credit Note Date:</strong>
+                    </t>
+                    <t t-elif="o.move_type == 'in_refund'">
+                        <strong>Debit Debit Date:</strong>
+                    </t>
+                    <t t-elif="o.move_type == 'out_receipt'">
+                        <strong>Receipt Date:</strong>
+                    </t>
+
+                    <t t-else="">
+                        <strong>Date:</strong>
+                    </t>
+                    <br/>
+                    <span t-field="o.invoice_date">2023-09-12</span>
+                </div>
+
+                <div t-attf-class="#{'col-auto col-3 mw-100' if report_type != 'html' else 'col'} mb-2"
+                     t-if="o.move_type == 'in_refund' and o.invoice_origin" name="origin">
+                    <strong>Source:</strong>
+                    <br/>
+                    <span t-field="o.invoice_origin">SO123</span>
+                </div>
+<!--                <div t-attf-class="#{'col-auto col-3 mw-100' if report_type != 'html' else 'col'} mb-2"-->
+<!--                     t-if="o.move_type == 'in_refund' and o.ref" name="reference">-->
+<!--                    <strong>Reference:</strong>-->
+<!--                    <br/>-->
+<!--                    <span t-field="o.ref">INV/2023/00001</span>-->
+<!--                </div>-->
+            </xpath>
+        </template>
+    </data>
+</odoo>

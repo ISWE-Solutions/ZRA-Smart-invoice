@@ -2,6 +2,7 @@ from odoo import models, fields, api
 import requests
 import json
 from odoo.exceptions import UserError
+from datetime import datetime
 
 class StockScrap(models.Model):
     _inherit = 'stock.scrap'
@@ -21,6 +22,10 @@ class StockScrap(models.Model):
             # Calculate the new quantity after scrap
             existing_qty = product.qty_available
             new_qty = existing_qty - record.scrap_qty
+
+            print('existing', existing_qty)
+            print('scrap', record.scrap_qty)
+            print('new', new_qty)
 
             # Get VAT category code and amount from taxes
             vatCatCd = ""
@@ -106,7 +111,7 @@ class StockScrap(models.Model):
 
             item = {
                 "itemCd": product_template.item_Cd,
-                "rsdQty": record.scrap_qty # Use the new quantity after scrap
+                "rsdQty": new_qty + record.scrap_qty
             }
             save_stock_master_payload['stockItemList'].append(item)
             print("Payload for saveStockMaster:", json.dumps(save_stock_master_payload, indent=4))

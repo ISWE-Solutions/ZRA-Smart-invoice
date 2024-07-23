@@ -1,47 +1,27 @@
 from odoo import models, fields, api, _
 import logging
-import csv
 import requests
 
 _logger = logging.getLogger(__name__)
 
-
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
-    classification = fields.Many2one(
-        'zra.item.data',
-        string='Item Classification',
-        required=False
-    )
+    classification = fields.Many2one('zra.item.data', string='Item Classification')
     item_cls_cd = fields.Char(string='Item Classification Code', readonly=True, store=True)
     item_cls_lvl = fields.Integer(string='Item Classification Level', readonly=True, store=True)
     tax_ty_cd = fields.Char(string='Tax Type Code', readonly=True, store=True)
     mjr_tg_yn = fields.Char(string='Major Target', readonly=True, store=True)
     use_yn = fields.Char(string='Use', readonly=True, store=True)
-
-    quantity_unit_cdNm = fields.Many2one(
-        'quantity.unit.data',
-        string='Quantity Unit',
-        required=False
-    )
+    quantity_unit_cdNm = fields.Many2one('quantity.unit.data', string='Quantity Unit')
     quantity_unit_cd = fields.Char(string="Quantity Unit Code", readonly=True, store=True)
-
-    packaging_data_cdNm = fields.Many2one(
-        'packaging.unit.data',
-        string='Packaging Unit',
-        required=False
-    )
+    packaging_data_cdNm = fields.Many2one('packaging.unit.data', string='Packaging Unit')
     packaging_unit_cd = fields.Char(string='Packaging Code', readonly=True, store=True)
-
-    cdNm = fields.Many2one(
-        'country.data',
-        string='Country',
-        required=False
-    )
+    cdNm = fields.Many2one('country.data', string='Country')
     cd = fields.Char(string='Origin Country Code', readonly=True, store=True)
-
     item_Cd = fields.Char(string='Item Code', readonly=True, store=True)
+
+    is_updating = fields.Boolean(default=False, store=False)
 
     def generate_item_code(self, cd, product_type, packaging_unit, quantity_unit):
         sequence = self.env['item.code.sequence'].search([], limit=1)
@@ -92,6 +72,7 @@ class ProductTemplate(models.Model):
     @api.model
     def create(self, vals):
         _logger.info("Creating product with values: %s", vals)
+        vals['is_updating'] = False
         if 'cdNm' in vals:
             country = self.env['country.data'].browse(vals['cdNm'])
             vals['cd'] = country.country_cd
@@ -111,36 +92,41 @@ class ProductTemplate(models.Model):
             packaging_unit = self.env['packaging.unit.data'].browse(vals['packaging_data_cdNm'])
             vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
 
-        record = super(ProductTemplate, self).create(vals)
+        record = super(ProductTemplate, self.with_context(is_create=True)).create(vals)
         record._handle_post_item_data(vals, is_create=True)
         _logger.info("Product created with ID: %s", record.id)
         return record
 
-    def write(self, vals):
-        _logger.info("Updating product with values: %s", vals)
-        if 'cdNm' in vals:
-            country = self.env['country.data'].browse(vals['cdNm'])
-            vals['cd'] = country.country_cd
-        if 'classification' in vals:
-            classification = self.env['zra.item.data'].browse(vals['classification'])
-            vals.update({
-                'item_cls_cd': classification.itemClsCd,
-                'item_cls_lvl': classification.itemClsLvl,
-                'tax_ty_cd': classification.taxTyCd,
-                'mjr_tg_yn': classification.mjrTgYn,
-                'use_yn': classification.useYn
-            })
-        if 'quantity_unit_cdNm' in vals:
-            quantity_unit = self.env['quantity.unit.data'].browse(vals['quantity_unit_cdNm'])
-            vals['quantity_unit_cd'] = quantity_unit.quantity_unit_cd
-        if 'packaging_data_cdNm' in vals:
-            packaging_unit = self.env['packaging.unit.data'].browse(vals['packaging_data_cdNm'])
-            vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
-
-        result = super(ProductTemplate, self).write(vals)
-        self._handle_post_item_data(vals, is_create=False)
-        _logger.info("Product updated with ID: %s", self.id)
-        return result
+    # @api.model
+    # def write(self, vals):
+    #     if self.env.context.get('is_create', False):
+    #         # Prevent write operations if it's a creation
+    #         return super(ProductTemplate, self).write(vals)
+    #
+    #     _logger.info("Updating product with values: %s", vals)
+    #     if 'cdNm' in vals:
+    #         country = self.env['country.data'].browse(vals['cdNm'])
+    #         vals['cd'] = country.country_cd
+    #     if 'classification' in vals:
+    #         classification = self.env['zra.item.data'].browse(vals['classification'])
+    #         vals.update({
+    #             'item_cls_cd': classification.itemClsCd,
+    #             'item_cls_lvl': classification.itemClsLvl,
+    #             'tax_ty_cd': classification.taxTyCd,
+    #             'mjr_tg_yn': classification.mjrTgYn,
+    #             'use_yn': classification.useYn
+    #         })
+    #     if 'quantity_unit_cdNm' in vals:
+    #         quantity_unit = self.env['quantity.unit.data'].browse(vals['quantity_unit_cdNm'])
+    #         vals['quantity_unit_cd'] = quantity_unit.quantity_unit_cd
+    #     if 'packaging_data_cdNm' in vals:
+    #         packaging_unit = self.env['packaging.unit.data'].browse(vals['packaging_data_cdNm'])
+    #         vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
+    #
+    #     result = super(ProductTemplate, self).write(vals)
+    #     self._handle_post_item_data(vals, is_create=False)
+    #     _logger.info("Product updated with ID: %s", self.id)
+    #     return result
 
     def _handle_post_item_data(self, vals, is_create):
         if is_create:
@@ -175,7 +161,7 @@ class ProductTemplate(models.Model):
             "addInfo": None,
             "sftyQty": None,
             "isrcAplcbYn": "N",
-            "useYn": self.use_yn,
+            "useYn": 'Y' if self.use_yn else 'N',
             "regrNm": current_user.name,
             "regrId": current_user.id,
             "modrNm": current_user.name,
@@ -217,9 +203,8 @@ class ProductTemplate(models.Model):
             }
         }
 
-
 class ItemCodeSequence(models.Model):
     _name = 'item.code.sequence'
     _description = 'Item Code Sequence'
 
-    next_number = fields.Integer('Next Number', default=1)
+    next_number = fields.Integer(default=1)

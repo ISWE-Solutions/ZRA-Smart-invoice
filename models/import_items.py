@@ -15,6 +15,7 @@ fetch_import_data_counter = 0
 compute_fetch_selection_cache = None
 compute_fetch_selection_last_request = None
 
+
 class ImportData(models.Model):
     _name = 'import.data'
     _description = 'Import Data'
@@ -45,7 +46,7 @@ class ImportData(models.Model):
     fetch_selection = fields.Selection(
         selection='_compute_fetch_selection',
         string='Fetch Selection',
-        required=True,
+        required=False,
 
         help="Select an item from the fetched data."
     )
@@ -59,6 +60,9 @@ class ImportData(models.Model):
     tax_ty_cd = fields.Char(string='Tax Type Code', readonly=True, store=True)
     mjr_tg_yn = fields.Char(string='Major Target', readonly=True, store=True)
     use_yn = fields.Char(string='Use', readonly=True, store=True)
+
+    def values(self):
+        print('item name', self.item_nm)
 
     @api.onchange('classification')
     def _onchange_classification(self):
@@ -75,73 +79,76 @@ class ImportData(models.Model):
             self.mjr_tg_yn = False
             self.use_yn = False
 
-    @api.model
-    def _compute_fetch_selection(self):
+    def _fetch_import_items_data(self):
+        global compute_fetch_selection_counter, fetch_import_data_counter
         global compute_fetch_selection_cache, compute_fetch_selection_last_request
 
-        current_request_time = "20240105210300"
+        api_url = "http://localhost:8085/imports/selectImportItems"
+        payload = {
+            "tpin": "1018798746",
+            "bhfId": "000",
+            "lastReqDt": "20240105210300"
+        }
 
-        if compute_fetch_selection_cache is None or compute_fetch_selection_last_request != current_request_time:
-            api_url = "http://localhost:8085/imports/selectImportItems"
-            payload = {
-                "tpin": "1018798746",
-                "bhfId": "000",
-                "lastReqDt": current_request_time
-            }
+        if compute_fetch_selection_cache is None or compute_fetch_selection_last_request != payload['lastReqDt']:
+            compute_fetch_selection_counter += 1
+            fetch_import_data_counter += 1
+            print('Compute Fetch Selection Endpoint Hit Count:', compute_fetch_selection_counter)
+            print('Fetch Import Data Endpoint Hit Count:', fetch_import_data_counter)
 
             try:
                 response = requests.post(api_url, json=payload)
                 response.raise_for_status()
+                result = response.json()
+
+                if result.get('resultCd') != '000':
+                    return []
+
+                item_list = result.get('data', {}).get('itemList', [])
+                compute_fetch_selection_cache = item_list
+                compute_fetch_selection_last_request = payload['lastReqDt']
             except requests.exceptions.RequestException as e:
-                print('Error fetching fetch options:', e)
+                _logger.error('Error fetching fetch options:', e)
                 return []
-
-            result = response.json()
-            if result.get('resultCd') != '000':
-                return []
-
-            item_list = result.get('data', {}).get('itemList', [])
-            if not item_list:
-                return []
-
-            selection_data = [
-                (
-                    f"{item['taskCd']}_{item['itemSeq']}",
-                    f"{item['itemNm']} - {item['taskCd']} - {item['orgnNatCd']}"
-                )
-                for item in item_list
-            ]
-
-            compute_fetch_selection_cache = selection_data
-            compute_fetch_selection_last_request = current_request_time
 
         return compute_fetch_selection_cache
 
+    def _compute_fetch_selection(self):
+        item_list = self._fetch_import_items_data()
+
+        if not item_list:
+            return []
+
+        selection_data = [
+            (
+                f"{item['taskCd']}_{item['itemSeq']}",
+                f"{item['itemNm']} - {item['taskCd']} - {item['orgnNatCd']}"
+            )
+            for item in item_list
+        ]
+        return selection_data
     @api.onchange('fetch_selection')
     def _onchange_fetch_selection(self):
         if self.fetch_selection:
             self.fetch_import_data()
 
     def fetch_import_data(self):
+        item_list = self._fetch_import_items_data()
+
         if not self.fetch_selection:
             raise UserError(_('No selection made.'))
 
         task_cd, item_seq = self.fetch_selection.split('_')
 
-        if compute_fetch_selection_cache is None:
-            self._compute_fetch_selection()  # Fetch data if cache is empty
-
-        # Find the selected item in the cached data
         selected_item = next(
-            (item for item in compute_fetch_selection_cache if
-             str(item[0].split('_')[0]) == task_cd and str(item[0].split('_')[1]) == item_seq),
+            (item for item in item_list if str(item['taskCd']) == task_cd and str(item['itemSeq']) == item_seq),
             None
         )
 
         if not selected_item:
             raise UserError(_('Selected item not found in the fetched data.'))
 
-        # Call the method to create or update the selected item
+        # Create or update the selected item
         self.create_or_update_import_data(selected_item)
 
         return {
@@ -273,11 +280,27 @@ class ImportData(models.Model):
             }
             self.create(vals)
 
+            import_data_instance = self.search(
+                [('task_cd', '=', item.get('taskCd')), ('dcl_no', '=', item.get('dclNo'))])
+            for item in import_data_instance.item_list:
+                item.check_item_name()
+
     def _parse_date(self, date_str):
         try:
             return datetime.strptime(date_str, '%Y%m%d').date()
         except ValueError:
             return False
+
+    def refresh_list(self):
+
+        global compute_fetch_selection_cache, compute_fetch_selection_last_request
+
+        compute_fetch_selection_cache = None
+        compute_fetch_selection_last_request = None
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload',
+        }
 
     def action_confirm_import(self):
 
@@ -332,12 +355,12 @@ class ImportData(models.Model):
                 confirmed_items.append(item)
                 io_confirmed_items.append(item)
                 confirmed_stock_items.append({
-                    "itemCd": item_cd,
+                    "itemCd": item.item_cd or item_cd,
                     "rsdQty": total_confirmed_qty
                 })
                 confirmed_io_items.append({
                     "itemSeq": item.item_seq,
-                    "itemCd": item_cd,
+                    "itemCd": item.item_cd or item_cd,
                     "itemClsCd": item.item_cls_cd,
                     "itemNm": item.item_nm,
                     "bcd": None,
@@ -374,13 +397,13 @@ class ImportData(models.Model):
                 rejected_items.append(item)
                 io_rejected_items.append(item)
                 rejected_stock_items.append({
-                    "itemCd": item_cd,
+                    "itemCd": item.item_cd or item_cd,
                     "rsdQty": rejected_qty
                 })
 
                 rejected_io_items.append({
                     "itemSeq": item.item_seq,
-                    "itemCd": item_cd,
+                    "itemCd": item.item_cd or item_cd,
                     "itemClsCd": item.item_cls_cd,
                     "itemNm": item.item_nm,
                     "bcd": None,
@@ -420,19 +443,19 @@ class ImportData(models.Model):
         else:
             print('Partial confirmation.')
             self.update_import_items()
-            self.reject_import_items()
 
             # print("Saving confirmed items with stock master payload:")
             self.save_stock_items(confirmed_io_items)
 
-            # print("Saving rejected items with stock master payload:")
-            self.save_stock_items(rejected_io_items)
-
             # print("Saving confirmed items with stock master payload:")
             self.save_stock_master(confirmed_stock_items)
 
+            self.reject_import_items()
             # print("Saving rejected items with stock master payload:")
-            self.save_stock_master(rejected_stock_items)
+            # self.save_stock_items(rejected_io_items)
+
+            # print("Saving rejected items with stock master payload:")
+            # self.save_stock_master(rejected_stock_items)
 
             self.status = 'partial'
 
@@ -472,6 +495,7 @@ class ImportData(models.Model):
                 'quantity_unit_cd': item.qty_unit_cd,
                 'use_yn': item.use_yn or 'Y',
                 'item_cls_cd': item.item_cls_cd,
+                'item_Cd': item.item_cd,
                 'cd': item.orgn_nat_cd,
             }
 
@@ -588,7 +612,7 @@ class ImportData(models.Model):
                 "remark": item.remark or "remark",
                 "modrNm": self.create_uid.name,
                 "modrId": self.create_uid.id,
-            } for item in self.item_list ]
+            } for item in self.item_list]
         }
         print(payload)
         response = requests.post(api_url, json=payload)
@@ -785,7 +809,7 @@ class ImportData(models.Model):
 
             payload["itemList"].append({
                 "itemSeq": item.item_seq,
-                "itemCd": item_cd,
+                "itemCd": item.item_cd or item_cd,
                 "itemClsCd": item.item_cls_cd,
                 "itemNm": item.item_nm,
                 "bcd": None,
@@ -849,17 +873,19 @@ class ImportData(models.Model):
             if product_template:
                 item_cd = product_template.item_Cd
             else:
-                item_cd = False  # Set default value if product template not found
+                item_cd = False
 
             total_qty = existing_qty + confirmed_qty
+            print('existing', existing_qty)
+            print('confirmed', confirmed_qty)
 
             payload["stockItemList"].append({
-                "itemCd": item_cd,
+                "itemCd": item.item_cd or item_cd,
                 "rsdQty": total_qty
             })
 
-        # print("Save Stock Master Payload:")
-        # print(payload)
+        print("Save Stock Master Payload:")
+        print(payload)
 
         # Send the request to save stock master
         try:
@@ -905,6 +931,44 @@ class ImportItem(models.Model):
     tax_ty_cd = fields.Char(string='Tax Type Code', readonly=True, store=True)
     mjr_tg_yn = fields.Char(string='Major Target', readonly=True, store=True)
     use_yn = fields.Char(string='Use', readonly=True, store=True)
+    _item_cd_options_array = []
+
+    def check_product_exists(self):
+        print(f"Checking product for item_nm: {self.item_nm}")
+        if not self.item_nm:
+            return False
+        product = self.env['product.template'].search([('name', '=', self.item_nm)], limit=1)
+        if product:
+            return product.name
+        return False
+
+    def values(self, *args, **kwargs):
+        item_name = self.item_nm
+        print(item_name)
+        products = self.env['product.template'].search([('name', '=', item_name)])
+        item_cd_options = [(product.item_Cd, product.item_Cd) for product in products.filtered(lambda p: p.item_Cd)]
+        # Store the options in the class-level array
+        type(self)._item_cd_options_array = item_cd_options
+        print(item_cd_options)
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload',
+        }
+
+    @classmethod
+    def _get_item_cd_options(cls):
+        # Return the class-level array
+        return cls._item_cd_options_array
+
+    def check_item_name(self):
+        product_name = self.check_product_exists()
+        if product_name:
+            # Product exists, handle accordingly
+            print(f"Product {product_name} exists.")
+        else:
+            # Product does not exist, handle accordingly
+            print(f"Product with name {self.item_nm} does not exist.")
 
     @api.onchange('classification')
     def _onchange_classification(self):
@@ -922,10 +986,28 @@ class ImportItem(models.Model):
             self.use_yn = False
 
     @api.model
+    def _find_product_name(self, item_name, item_cd):
+        domain = [('name', '=', item_name)]
+        if item_cd:
+            domain.append(('item_Cd', '=', item_cd))
+        product = self.env['product.template'].search(domain, limit=1)
+        print('Code', product.item_Cd)
+        return product.item_Cd if product else False
+
+    # @api.onchange('item_nm')
+    # def _onchange_item_nm(self):
+    #     if self.item_nm:
+    #         self.item_cd = self._get_item_cd_options()
+    #
+    # _sql_constraints = [
+    #     ('uniq_name_item_cd', 'unique(name, item_cd)', 'Name and Item Code must be unique.')
+    # ]
+
+    @api.model
     def _find_product_classification(self, item_name, item_cd):
         domain = [('name', '=', item_name)]
         if item_cd:
-            domain.append(('item_cd', '=', item_cd))
+            domain.append(('item_Cd', '=', item_cd))
         product = self.env['product.template'].search(domain, limit=1)
         return product.classification if product else False
 
@@ -983,5 +1065,20 @@ class ImportItem(models.Model):
         for item in self:
             item.confirmed_qty = item.qty
 
+    def generate_item_code(self):
+        sequence = self.env['item.code.sequence'].search([], limit=1)
+        if not sequence:
+            sequence = self.env['item.code.sequence'].create({})
+        next_number = sequence.next_number
+        sequence.next_number += 1
+        next_number_str = str(next_number).zfill(7)
+        item_code = f"{self.item_nm[:2]}{self.pkg_unit_cd[:2]}{self.qty_unit_cd[:2]}{next_number_str}"
 
-
+        # Ensure the item code is added to selection options
+        products = self.env['product.template'].search([('name', '=', self.item_nm)])
+        if item_code not in [product.item_Cd for product in products]:
+            product = self.env['product.template'].create({
+                'name': self.item_nm,
+                'item_Cd': item_code,
+            })
+        self.item_cd = item_code

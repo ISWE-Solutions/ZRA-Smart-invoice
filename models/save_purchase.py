@@ -3,7 +3,7 @@ import logging
 import requests
 import json
 import re
-
+from datetime import datetime
 _logger = logging.getLogger(__name__)
 
 
@@ -17,7 +17,6 @@ class StockPicking(models.Model):
         res = super(StockPicking, self).button_validate()
 
         for picking in self:
-            _logger.info(f'Processing picking with type: {picking.picking_type_id.code}')
             print(f'Processing picking with type: {picking.picking_type_id.code}')
 
             moves = picking.move_ids_without_package
@@ -58,7 +57,7 @@ class StockPicking(models.Model):
 
                 item_list.append({
                     "itemSeq": idx + 1,
-                    "itemCd": product_template.item_Cd or move.product_id.default_code or str(move.product_id.id),
+                    "itemCd": product_template.item_Cd  or str(move.product_id.id),
                     "itemClsCd": move.product_id.product_tmpl_id.item_cls_cd,
                     "itemNm": move.product_id.display_name,
                     "bcd": "",
@@ -91,6 +90,8 @@ class StockPicking(models.Model):
                     current_stock_qty = 0
                 else:
                     current_stock_qty = stock_quant.quantity
+
+                print(current_stock_qty)
 
                 # Adjust stock quantity based on operation type
                 if picking.picking_type_id.code == 'incoming':
@@ -184,11 +185,11 @@ class StockPicking(models.Model):
                 except requests.exceptions.RequestException as e:
                     _logger.error(f'API request failed: {e}')
 
-            elif picking.picking_type_id.code == 'outgoing':
+            # elif picking.picking_type_id.code == 'outgoing':
                 payload_new_endpoint = {
                     "tpin": "1018798746",
                     "bhfId": "000",
-                    "sarNo": 2,
+                    "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
                     "orgSarNo": 0,
                     "regTyCd": "M",
                     "custTpin": picking.partner_id.tpin or None,
@@ -220,17 +221,12 @@ class StockPicking(models.Model):
                             result_msg_new_endpoint, move.product_id.display_name),
                         subtype_id=self.env.ref('mail.mt_note').id
                     )
-
-                    _logger.info(f'API New Endpoint Response: {result_msg_new_endpoint}')
                     print(f'API New Endpoint Response: {result_msg_new_endpoint}')
                 except requests.exceptions.RequestException as e:
-                    _logger.error(f'API request failed: {e}')
                     print(f'API request failed: {e}')
 
-            _logger.info(f'Message posted for product: {product.display_name}')
             print(f'Message posted for product: {product.display_name}')
 
-        _logger.info('Exiting button_validate method.')
         print('Exiting button_validate method.')
 
         return res

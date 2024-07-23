@@ -10,12 +10,22 @@ class ResConfigSettings(models.TransientModel):
 
     fetch_data_button = fields.Boolean(string="Fetch Data")
 
+    endpoint_hit_counts = {
+        'endpoint_1': 0,
+        'endpoint_2': 0
+    }
+
     def fetch_data(self):
         self.env['zra.item.data'].fetch_and_store_classification_data()
-        self.env['quantity.unit.data'].fetch_and_store_quantity_data()
-        self.env['packaging.unit.data'].fetch_and_store_packaging_data()
-        self.env['country.data'].fetch_and_store_country_data()
+        common_data = self.env['code.data'].fetch_common_code_data()
+        self.env['quantity.unit.data'].store_quantity_data(common_data)
+        self.env['packaging.unit.data'].store_packaging_data(common_data)
+        self.env['country.data'].store_country_data(common_data)
         _logger.info("Data fetched and stored successfully.")
+
+        print(f"Endpoint 1 hit {self.endpoint_hit_counts['endpoint_1']} time(s)")
+        print(f"Endpoint 2 hit {self.endpoint_hit_counts['endpoint_2']} time(s)")
+
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
@@ -54,7 +64,9 @@ class ZraItemData(models.Model):
         try:
             response = requests.post(url, json=payload, headers=headers)
             response.raise_for_status()
+            ResConfigSettings.endpoint_hit_counts['endpoint_1'] += 1
             data = response.json().get('data', {}).get('itemClsList', [])
+            self.sudo().search([]).unlink()  # Clear existing records
             for item in data:
                 if item['useYn'] == 'Y':
                     self.create({
@@ -69,16 +81,12 @@ class ZraItemData(models.Model):
             _logger.error('Failed to fetch classification data from ZRA: %s', e)
 
 
-class QuantityUnitData(models.Model):
-    _name = 'quantity.unit.data'
-    _description = 'Quantity Unit Data'
-    _rec_name = 'quantity_unit_cdNm'  # Specify the field to be used as the name
-
-    quantity_unit_cd = fields.Char(string='Quantity Unit Code')
-    quantity_unit_cdNm = fields.Char(string='Quantity Unit Name')
+class CodeData(models.AbstractModel):
+    _name = 'code.data'
+    _description = 'Common Code Data'
 
     @api.model
-    def fetch_and_store_quantity_data(self):
+    def fetch_common_code_data(self):
         url = 'http://localhost:8085/code/selectCodes'
         payload = {
             "tpin": "1018798746",
@@ -91,16 +99,31 @@ class QuantityUnitData(models.Model):
         try:
             response = requests.post(url, json=payload, headers=headers)
             response.raise_for_status()
-            data = response.json().get('data', {}).get('clsList', [])
-            for cls_item in data:
-                if cls_item['cdCls'] == '10':
-                    for item in cls_item.get('dtlList', []):
-                        self.create({
-                            'quantity_unit_cd': item['cd'],
-                            'quantity_unit_cdNm': item['cdNm']
-                        })
+            ResConfigSettings.endpoint_hit_counts['endpoint_2'] += 1
+            return response.json().get('data', {}).get('clsList', [])
         except requests.exceptions.RequestException as e:
-            _logger.error('Failed to fetch quantity data: %s', e)
+            _logger.error('Failed to fetch common code data: %s', e)
+            return []
+
+
+class QuantityUnitData(models.Model):
+    _name = 'quantity.unit.data'
+    _description = 'Quantity Unit Data'
+    _rec_name = 'quantity_unit_cdNm'  # Specify the field to be used as the name
+
+    quantity_unit_cd = fields.Char(string='Quantity Unit Code')
+    quantity_unit_cdNm = fields.Char(string='Quantity Unit Name')
+
+    @api.model
+    def store_quantity_data(self, data):
+        self.sudo().search([]).unlink()  # Clear existing records
+        for cls_item in data:
+            if cls_item['cdCls'] == '10':
+                for item in cls_item.get('dtlList', []):
+                    self.create({
+                        'quantity_unit_cd': item['cd'],
+                        'quantity_unit_cdNm': item['cdNm']
+                    })
 
 
 class PackagingUnitData(models.Model):
@@ -112,29 +135,15 @@ class PackagingUnitData(models.Model):
     packaging_unit_cdNm = fields.Char(string='Packaging Unit Name')
 
     @api.model
-    def fetch_and_store_packaging_data(self):
-        url = 'http://localhost:8085/code/selectCodes'
-        payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
-            "lastReqDt": "20180520000000"
-        }
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json().get('data', {}).get('clsList', [])
-            for cls_item in data:
-                if cls_item['cdCls'] == '17':
-                    for item in cls_item.get('dtlList', []):
-                        self.create({
-                            'packaging_unit_cd': item['cd'],
-                            'packaging_unit_cdNm': item['cdNm']
-                        })
-        except requests.exceptions.RequestException as e:
-            _logger.error('Failed to fetch packaging data: %s', e)
+    def store_packaging_data(self, data):
+        self.sudo().search([]).unlink()  # Clear existing records
+        for cls_item in data:
+            if cls_item['cdCls'] == '17':
+                for item in cls_item.get('dtlList', []):
+                    self.create({
+                        'packaging_unit_cd': item['cd'],
+                        'packaging_unit_cdNm': item['cdNm']
+                    })
 
 
 class CountryData(models.Model):
@@ -146,26 +155,12 @@ class CountryData(models.Model):
     country_cdNm = fields.Char(string='Country Name')
 
     @api.model
-    def fetch_and_store_country_data(self):
-        url = 'http://localhost:8085/code/selectCodes'
-        payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
-            "lastReqDt": "20180520000000"
-        }
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json().get('data', {}).get('clsList', [])
-            for cls_item in data:
-                if cls_item['cdCls'] == '05':
-                    for item in cls_item.get('dtlList', []):
-                        self.create({
-                            'country_cd': item['cd'],
-                            'country_cdNm': item['cdNm']
-                        })
-        except requests.exceptions.RequestException as e:
-            _logger.error('Failed to fetch country data: %s', e)
+    def store_country_data(self, data):
+        self.sudo().search([]).unlink()  # Clear existing records
+        for cls_item in data:
+            if cls_item['cdCls'] == '05':
+                for item in cls_item.get('dtlList', []):
+                    self.create({
+                        'country_cd': item['cd'],
+                        'country_cdNm': item['cdNm']
+                    })

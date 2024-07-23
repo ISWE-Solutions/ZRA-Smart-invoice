@@ -10,7 +10,7 @@
                         <button name="confirm_invoice" type="object" string="Validate purchase"
                                 class="oe_highlight btn btn-primary"
                                 confirm="Are you sure you want to Validate the purchase?"
-
+                                invisible="status != 'draft'"
                                 />
 <!--                        <button name="reject_purchase" type="object" string="Reject Purchase"-->
 <!--                                class="oe_highlight btn btn-danger"-->
@@ -39,13 +39,13 @@
                         <notebook>
                             <page string="Items">
                                 <field name="item_list">
-                                    <tree editable="bottom" delete="false" create="True">
+                                    <tree editable="bottom" delete="True" create="True">
                                         <field name="item_seq" readonly="0"/>
                                         <field name="item_cd" readonly="0"/>
                                         <field name="item_nm" readonly="0"/>
-                                        <field name="prc" readonly="1"/>
-                                        <field name="tot_amt" readonly="1"/>
-                                        <field name="fetched" readonly="1"/>
+                                        <field name="prc" readonly="0"/>
+                                        <field name="tot_amt" readonly="0"/>
+                                        <field name="fetched" readonly="0"/>
                                         <field name="qty" />
                                     </tree>
                                 </field>
@@ -65,6 +65,7 @@
                 <form create="false">
                     <header>
                         <button name="fetch_purchase_data" type="object" string="Fetch Data" class="oe_highlight"/>
+                        <button name="refresh_list" type="object" string="Refresh List" class="oe_highlight btn btn-primary"/>
                     </header>
                     <sheet>
                         <group>

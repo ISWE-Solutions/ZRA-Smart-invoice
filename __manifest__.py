@@ -30,8 +30,12 @@ Intergration with Zra smart invoice system
         'views/product_template_views.xml',
         'views/contacts.xml',
         'views/sales.xml',
+        'wizards/account_debit_note_wizard.xml',
         'views/fetch_data_view.xml',
-        # 'views/menu_items.xml',
+        'views/mwaba.xml',
+        'views/debit_note_preview.xml',
+        # 'views/debit_note.xml',
+        'views/invoice_reports.xml',
         'data/tax_types_data.xml',
     ],
     # only loaded in demonstration mode

@@ -11,6 +11,7 @@
                         <button name="action_confirm_import" type="object" string="Validate Import"
                                 class="oe_highlight btn btn-primary"
                                 confirm="Are you sure you want to Validate the import?"
+                                invisible="status != 'draft'"
                         />
                     </header>
                     <sheet>
@@ -30,8 +31,14 @@
                         <group>
                             <field name="item_list">
                                 <tree editable="bottom">
+<!--                                    <button name="generate_item_code" type="object" string="Generate Item Code"-->
+<!--                                            onclick="window.location.reload()"-->
+<!--                                            class="btn btn-primary"/>-->
+<!--                                    <button name="values" type="object" string="Retrieve Item Code(s)"-->
+<!--                                            onclick="window.location.reload()"-->
+<!--                                            class="btn btn-primary"/>-->
                                     <field name="item_seq"/>
-                                    <field name="classification" widget="selection"/>
+                                    <field name="classification"/>
                                     <field name="item_cls_cd" readonly="1"/>
                                     <field name="item_cd"/>
                                     <field name="item_nm"/>
@@ -48,6 +55,7 @@
             </field>
         </record>
 
+
         <!-- Simplified Form View -->
         <record id="view_import_data_simple_form" model="ir.ui.view">
             <field name="name">import.data.simple.form</field>
@@ -56,6 +64,7 @@
                 <form>
                     <header>
                         <button name="fetch_import_data" type="object" string="Fetch Data" class="oe_highlight"/>
+                        <button name="refresh_list" type="object" string="Refresh list" class="oe_highlight"/>
                     </header>
                     <sheet>
                         <group>
