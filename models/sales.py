@@ -91,31 +91,6 @@ class AccountMove(models.Model):
     reversal_reason_text = fields.Char(string='Reversal Reason Text', compute='_compute_reason_text')
     debit_note_reason_text = fields.Char(string='Debit Note Reason Text', compute='_compute_reason_text')
 
-    def _generate_qr_code(self):
-        for record in self:
-            if record.qr_code_url:
-                try:
-                    qr = qrcode.QRCode(
-                        version=1,
-                        error_correction=qrcode.constants.ERROR_CORRECT_L,
-                        box_size=10,
-                        border=4,
-                    )
-                    qr.add_data(record.qr_code_url)
-                    qr.make(fit=True)
-
-                    img = qr.make_image(fill='black', back_color='white')
-                    buffer = BytesIO()
-                    img.save(buffer, format="PNG")
-                    qr_code_image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-                    record.write({'qr_code_image': qr_code_image_base64})
-                    print(f'QR Code image saved for record {record.id}')
-                except Exception as e:
-                    print(f'Failed to generate QR Code for record {record.id}: {str(e)}')
-            else:
-                record.write({'qr_code_image': False})
-                print(f'No QR Code URL for record {record.id}')
-
     @api.model
     def generate_qr_code_button(self):
         for record in self:
@@ -141,7 +116,7 @@ class AccountMove(models.Model):
                     print(f'Failed to generate QR Code for record {record.id}: {str(e)}')
             else:
                 record.write({'qr_code_image': False})
-                print(f'No QR Code URL for record {record.id}')
+                # print(f'No QR Code URL for record {record.id}')
 
     def get_exchange_rate(self, from_currency, to_currency):
         """Retrieve the latest exchange rate between two currencies."""
