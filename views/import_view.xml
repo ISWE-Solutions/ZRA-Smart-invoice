@@ -11,41 +11,41 @@
                         <button name="action_confirm_import" type="object" string="Validate Import"
                                 class="oe_highlight btn btn-primary"
                                 confirm="Are you sure you want to Validate the import?"
-                                invisible="status != 'draft'"
+
                         />
                     </header>
                     <sheet>
                         <group>
-                            <field name="task_cd"/>
-                            <field name="dcl_de"/>
-                            <field name="dcl_no"/>
+                            <field name="task_cd" readonly="1"/>
+                            <field name="dcl_de" readonly="1"/>
+                            <field name="dcl_no" readonly="1"/>
                             <field name="tot_wt"/>
                             <field name="net_wt"/>
-                            <field name="agnt_nm"/>
+                            <field name="agnt_nm" readonly="1"/>
                             <field name="orgn_nat_cd"/>
                             <field name="invc_fcur_amt" widget="monetary"/>
-                            <field name="invc_fcur_cd"/>
-                            <field name="invc_fcur_excrt"/>
+                            <field name="invc_fcur_cd" readonly="1"/>
+                            <field name="invc_fcur_excrt" readonly="1"/>
                             <field name="remark" required="1"/>
                         </group>
                         <group>
                             <field name="item_list">
                                 <tree editable="bottom">
-<!--                                    <button name="generate_item_code" type="object" string="Generate Item Code"-->
-<!--                                            onclick="window.location.reload()"-->
-<!--                                            class="btn btn-primary"/>-->
+                                    <button name="generate_item_code" type="object" string="Generate Item Code"
+                                            onclick="window.location.reload()"
+                                            class="btn btn-primary"/>
 <!--                                    <button name="values" type="object" string="Retrieve Item Code(s)"-->
 <!--                                            onclick="window.location.reload()"-->
 <!--                                            class="btn btn-primary"/>-->
-                                    <field name="item_seq"/>
+                                    <field name="item_seq" readonly="1"/>
                                     <field name="classification"/>
                                     <field name="item_cls_cd" readonly="1"/>
-                                    <field name="item_cd"/>
+                                    <field name="item_cd" required="1"/>
                                     <field name="item_nm"/>
                                     <field name="pkg_unit_cd"/>
                                     <field name="pkg"/>
                                     <field name="qty_unit_cd"/>
-                                    <field name="fetched_qty"/>
+                                    <field name="fetched_qty" readonly="1"/>
                                     <field name="qty"/>
                                 </tree>
                             </field>

@@ -90,6 +90,7 @@ class ImportData(models.Model):
             "lastReqDt": "20240105210300"
         }
 
+        # Check if cache is empty or last request date has changed
         if compute_fetch_selection_cache is None or compute_fetch_selection_last_request != payload['lastReqDt']:
             compute_fetch_selection_counter += 1
             fetch_import_data_counter += 1
@@ -461,14 +462,24 @@ class ImportData(models.Model):
 
         self.create_or_update_products()
 
+        # return {
+        #     'type': 'ir.actions.client',
+        #     'tag': 'display_notification',
+        #     'params': {
+        #         'title': _('Success'),
+        #         'message': _('Import Validated Successfully'),
+        #         'sticky': False,
+        #     }
+        # }
+
         return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Success'),
-                'message': _('Import Validated Successfully'),
-                'sticky': False,
-            }
+            'type': 'ir.actions.act_window',
+            'view_mode': 'form',
+            'res_model': 'import.data',
+            'res_id': self.id,
+            'target': 'current',
+            'flags': {'form_view_initial_mode': 'edit'},
+            'context': self.env.context,
         }
 
     def create_or_update_products(self):
@@ -501,11 +512,9 @@ class ImportData(models.Model):
 
             if existing_template:
                 # Update existing product template
-                # print(f'Updating existing product template {existing_template.name} with values: {template_values}')
                 existing_template.write(template_values)
             else:
                 # Create new product template
-                # print(f'Creating new product template with values: {template_values}')
                 existing_template = product_template_model.create(template_values)
 
             # Ensure the product variant exists
@@ -522,14 +531,12 @@ class ImportData(models.Model):
             if stock_quant:
                 new_quantity = stock_quant.quantity + item.qty
                 stock_quant.write({'quantity': new_quantity})
-                # print(f'Updated stock quant for {product_variant.name}, new quantity: {new_quantity}')
             else:
                 stock_quant_model.create({
                     'product_id': product_variant.id,
                     'location_id': stock_location.id,
                     'quantity': item.qty,
                 })
-                # print(f'Created new stock quant for {product_variant.name} with quantity: {item.qty}')
 
         # Optionally, commit the transaction if necessary
         self.env.cr.commit()
@@ -1066,19 +1073,49 @@ class ImportItem(models.Model):
             item.confirmed_qty = item.qty
 
     def generate_item_code(self):
-        sequence = self.env['item.code.sequence'].search([], limit=1)
+        # Check if the item code has already been generated for this product
+        existing_item = self.env['product.template'].search([
+            ('name', '=', self.item_nm),
+            ('item_Cd', 'ilike', self.item_nm[:2] + self.pkg_unit_cd[:2] + self.qty_unit_cd[:2])
+        ], limit=1)
+        if existing_item:
+            self.item_cd = existing_item.item_Cd
+            return {
+                'type': 'ir.actions.act_window',
+                'view_mode': 'form',
+                'res_model': 'import.data',
+                'res_id': self.id,
+                'target': 'current',
+                'flags': {'form_view_initial_mode': 'edit'},
+                'context': self.env.context,
+            }
+
+        # Locking mechanism to prevent race conditions
+        sequence = self.env['item.code.sequence'].sudo().search([], limit=1)
         if not sequence:
-            sequence = self.env['item.code.sequence'].create({})
+            sequence = self.env['item.code.sequence'].sudo().create({})
+
         next_number = sequence.next_number
-        sequence.next_number += 1
+        sequence.sudo().write({'next_number': next_number + 1})
         next_number_str = str(next_number).zfill(7)
         item_code = f"{self.item_nm[:2]}{self.pkg_unit_cd[:2]}{self.qty_unit_cd[:2]}{next_number_str}"
 
         # Ensure the item code is added to selection options
-        products = self.env['product.template'].search([('name', '=', self.item_nm)])
-        if item_code not in [product.item_Cd for product in products]:
-            product = self.env['product.template'].create({
-                'name': self.item_nm,
-                'item_Cd': item_code,
-            })
+        self.env['product.template'].create({
+            'name': self.item_nm,
+            'item_Cd': item_code,
+        })
+
+        # Add the generated item code to the selection options array
+        type(self)._item_cd_options_array.append((item_code, item_code))
         self.item_cd = item_code
+
+        return {
+            'type': 'ir.actions.act_window',
+            'view_mode': 'form',
+            'res_model': 'import.data',
+            'res_id': self.id,
+            'target': 'current',
+            'flags': {'form_view_initial_mode': 'edit'},
+            'context': self.env.context,
+        }

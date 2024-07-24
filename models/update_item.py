@@ -21,7 +21,53 @@ class ProductTemplate(models.Model):
     cd = fields.Char(string='Origin Country Code', readonly=True, store=True)
     item_Cd = fields.Char(string='Item Code', readonly=True, store=True)
 
+    taxes_id = fields.Many2many(
+        'account.tax',
+        default=lambda self: self.env['account.tax'].search([('description', '=', 'A')], limit=1).ids
+    )
+
     is_updating = fields.Boolean(default=False, store=False)
+
+    detailed_type = fields.Selection(
+        selection=[
+            ('product', 'Finished Product'),
+            ('consu', 'Consumable'),
+            ('service', 'Service'),
+        ],
+        default='product',
+        string='Product Type',
+    )
+
+    @api.depends('detailed_type')
+    def _compute_type(self):
+        type_mapping = {
+            'product': 'product',
+            'consu': 'consu',
+            'service': 'service',
+        }
+        for record in self:
+            record.type = type_mapping.get(record.detailed_type, record.detailed_type)
+
+    def get_primary_tax(self):
+        # If 'self' is an instance of product.template, use 'self' directly
+        if self.taxes_id:
+            return self.taxes_id[0]
+        return None
+
+    def get_tax_description(self, tax):
+        return tax.description if tax else ''
+
+    @api.model
+    def _fields_view_get(self, view_id=None, view_type='form', toolbar=False, submenu=False):
+        res = super(ProductTemplate, self)._fields_view_get(view_id, view_type, toolbar, submenu)
+        if view_type == 'form':
+            detailed_type_field = res['fields'].get('detailed_type', {})
+            selection = detailed_type_field.get('selection', [])
+            for i, (value, label) in enumerate(selection):
+                if value == 'product':
+                    selection[i] = (value, 'Finished Product')
+            detailed_type_field['selection'] = selection
+        return res
 
     def generate_item_code(self, cd, product_type, packaging_unit, quantity_unit):
         sequence = self.env['item.code.sequence'].search([], limit=1)
@@ -154,7 +200,7 @@ class ProductTemplate(models.Model):
             "orgnNatCd": self.cd,
             "pkgUnitCd": self.packaging_unit_cd,
             "qtyUnitCd": self.quantity_unit_cd,
-            "vatCatCd": "A",
+            "vatCatCd": self.get_tax_description(self.get_primary_tax()),
             "btchNo": None,
             "bcd": None,
             "dftPrc": self.list_price,

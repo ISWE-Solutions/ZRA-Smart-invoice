@@ -14,6 +14,7 @@ fetch_counter = 0
 
 fetch_options_cache = None
 fetch_options_last_request = None
+fetch_data_cache = None
 
 
 class PurchaseData(models.Model):
@@ -51,7 +52,7 @@ class PurchaseData(models.Model):
     fetch_selection = fields.Selection(
         string='Select Data to Fetch',
         selection='_get_fetch_options',
-        required=True,
+        required=False,
     )
 
     def log_endpoint_hits(self):
@@ -59,7 +60,11 @@ class PurchaseData(models.Model):
         print('Fetch Purchase Data Endpoint Hit Count: %d', fetch_purchase_data_counter)
 
     def _fetch_data_from_endpoint(self):
-        global fetch_counter, fetch_options_cache, fetch_options_last_request
+        global fetch_counter, fetch_data_cache, fetch_options_last_request
+
+        # Check if the cache is valid
+        if fetch_data_cache is not None and fetch_options_last_request == "20240105210300":
+            return fetch_data_cache
 
         fetch_counter += 1
         print('Fetch Endpoint Hit Count:', fetch_counter)
@@ -86,6 +91,8 @@ class PurchaseData(models.Model):
             return None
 
         if result.get('resultCd') == '000':
+            fetch_data_cache = result['data']
+            fetch_options_last_request = "20240105210300"
             return result['data']
         else:
             print('Failed to fetch data:', result.get('resultMsg'))
@@ -415,14 +422,15 @@ class PurchaseData(models.Model):
         self.create_or_update_products()
 
         return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Success'),
-                'message': _('Purchase Validated for supplier invoice no: %s') % self.spplr_invc_no,
-                'sticky': False,
-            }
+            'type': 'ir.actions.act_window',
+            'view_mode': 'form',
+            'res_model': 'purchase.data',
+            'res_id': self.id,
+            'target': 'current',
+            'flags': {'form_view_initial_mode': 'edit'},
+            'context': self.env.context,
         }
+
 
     def create_or_update_products(self):
         product_template_model = self.env['product.template']

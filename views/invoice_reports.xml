@@ -5,8 +5,16 @@
         <template id="report_invoice_document_custom" inherit_id="account.report_invoice_document">
             <xpath expr="//div[@class='oe_structure']" position="before">
                 <t t-esc="o.is_printed and 'Copy' or 'Original'">
-                    <span t-esc="Zaso"/>
                 </t>
+            </xpath>
+            <xpath expr="//div[@class='mb-3']" position="after">
+                <div t-if="o.exchange_rate">
+                    <strong>Exchange Rate:</strong>
+                    <span t-esc="o.exchange_rate"/>
+                </div>
+            </xpath>
+            <xpath expr="//div[@class='page mb-4']" position="after">
+
                 <div t-if="o.rcpt_no">
                     <strong>Receipt Number:</strong>
                     <span t-esc="o.rcpt_no"/>
@@ -19,6 +27,33 @@
                     <strong>Export Country:</strong>
                     <span t-esc="o.export_country_name"/>
                 </div>
+                <div t-if="o.vsdc_rcpt_pbct_date">
+                    <strong>VSDC Date:</strong>
+                    <span t-esc="o.vsdc_rcpt_pbct_date"/>
+                </div>
+                <div t-if="o.sdc_id">
+                    <strong>SDC ID:</strong>
+                    <span t-esc="o.sdc_id"/>
+                </div>
+                <div t-if="o.exchange_rate">
+                    <strong>Intrl Data:</strong>
+                    <span t-esc="o.intrl_data"/>
+                </div>
+                <div t-if="o.rcpt_sign">
+                    <strong>Sign:</strong>
+                    <span t-esc="o.rcpt_sign"/>
+                </div>
+                <field name="qr_code_image" >
+                    <strong>QR Code Image:</strong>
+                    <field name="qr_code_image" widget="image" class="oe_avatar"/>
+                </field>
+                <field name="qr_code_image" widget="image" options="{'no_open': True}" />
+                 <img t-att-src="'data:image/png;base64,' + doc.qr_code_image" />
+                <div t-if="o.qr_code_url">
+                    <strong>QR Code:</strong>
+                    <span t-esc="o.qr_code_url"/>
+                </div>
+
                 <div t-if="o.move_type == 'out_refund' and o.reversal_reason_text">
                     <strong>Refund Reason:</strong>
                     <span t-esc="o.reversal_reason_text"/>
@@ -58,12 +93,6 @@
                     <br/>
                     <span t-field="o.invoice_origin">SO123</span>
                 </div>
-<!--                <div t-attf-class="#{'col-auto col-3 mw-100' if report_type != 'html' else 'col'} mb-2"-->
-<!--                     t-if="o.move_type == 'in_refund' and o.ref" name="reference">-->
-<!--                    <strong>Reference:</strong>-->
-<!--                    <br/>-->
-<!--                    <span t-field="o.ref">INV/2023/00001</span>-->
-<!--                </div>-->
             </xpath>
         </template>
     </data>

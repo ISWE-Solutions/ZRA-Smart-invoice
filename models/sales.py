@@ -3,13 +3,18 @@ import requests
 import logging
 from datetime import datetime
 import json
-from odoo.exceptions import ValidationError
+import socket
+from odoo.exceptions import ValidationError, UserError
+import qrcode
+import base64
+from io import BytesIO
+
+
 
 _logger = logging.getLogger(__name__)
 
 class AccountMove(models.Model):
     _inherit = 'account.move'
-
 
     sale_type = fields.Char('Sale Type Code', default='N')
     receipt_type = fields.Char('Receipt Type Code', default='S')
@@ -29,6 +34,8 @@ class AccountMove(models.Model):
     sdc_id = fields.Char(string='SDC ID')
     mrc_no = fields.Char(string='MRC No')
     qr_code_url = fields.Char(string='QR Code URL')
+    qr_code_image = fields.Char(string='QR Code Image')
+
     reversal_reason = fields.Selection([
         ('01', 'Missing Quantity'),
         ('02', 'Missing Item'),
@@ -44,13 +51,13 @@ class AccountMove(models.Model):
         ('12', 'Wrong tax type'),
         ('13', 'Other reason'),
     ], string='Reversal Reason')
-
     debit_note_reason = fields.Selection([
         ('01', 'Wrong quantity invoiced'),
         ('02', 'Wrong invoice amount'),
         ('03', 'Omitted item'),
         ('04', 'Other [specify]')
     ], string='Debit Note Reason')
+    exchange_rate = fields.Char(string='Exchange rate')
 
     @api.depends('reversal_reason', 'debit_note_reason')
     def _compute_reason_text(self):
@@ -83,6 +90,58 @@ class AccountMove(models.Model):
 
     reversal_reason_text = fields.Char(string='Reversal Reason Text', compute='_compute_reason_text')
     debit_note_reason_text = fields.Char(string='Debit Note Reason Text', compute='_compute_reason_text')
+
+    def _generate_qr_code(self):
+        for record in self:
+            if record.qr_code_url:
+                try:
+                    qr = qrcode.QRCode(
+                        version=1,
+                        error_correction=qrcode.constants.ERROR_CORRECT_L,
+                        box_size=10,
+                        border=4,
+                    )
+                    qr.add_data(record.qr_code_url)
+                    qr.make(fit=True)
+
+                    img = qr.make_image(fill='black', back_color='white')
+                    buffer = BytesIO()
+                    img.save(buffer, format="PNG")
+                    qr_code_image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                    record.write({'qr_code_image': qr_code_image_base64})
+                    print(f'QR Code image saved for record {record.id}')
+                except Exception as e:
+                    print(f'Failed to generate QR Code for record {record.id}: {str(e)}')
+            else:
+                record.write({'qr_code_image': False})
+                print(f'No QR Code URL for record {record.id}')
+
+    @api.model
+    def generate_qr_code_button(self):
+        for record in self:
+            if record.qr_code_url:
+                try:
+                    qr = qrcode.QRCode(
+                        version=1,
+                        error_correction=qrcode.constants.ERROR_CORRECT_L,
+                        box_size=10,
+                        border=4,
+                    )
+                    qr.add_data(record.qr_code_url)
+                    qr.make(fit=True)
+
+                    img = qr.make_image(fill='black', back_color='white')
+                    buffer = BytesIO()
+                    img.save(buffer, format="PNG")
+                    qr_code_image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+                    record.write({'qr_code_image': qr_code_image_base64})
+                    print(f'QR Code image saved for record {record.id}')
+                except Exception as e:
+                    print(f'Failed to generate QR Code for record {record.id}: {str(e)}')
+            else:
+                record.write({'qr_code_image': False})
+                print(f'No QR Code URL for record {record.id}')
 
     def get_exchange_rate(self, from_currency, to_currency):
         """Retrieve the latest exchange rate between two currencies."""
@@ -118,34 +177,6 @@ class AccountMove(models.Model):
                 if line.tax_ids:
                     return line.tax_ids[0]
         return None
-
-    # def get_exchange_rate(self, from_currency, to_currency):
-    #     """Retrieve the latest exchange rate between two currencies."""
-    #     if from_currency == to_currency:
-    #         return 1.0
-    #
-    #     rate = self.env['res.currency.rate'].search([
-    #         ('currency_id', '=', from_currency.id),
-    #         ('name', '<=', fields.Date.today())
-    #     ], order='name desc', limit=1)
-    #
-    #     if not rate:
-    #         raise ValidationError(f"No exchange rate found for {from_currency.name} to {to_currency.name}.")
-    #
-    #     if to_currency == self.env.company.currency_id:
-    #         return rate.rate
-    #
-    #     to_rate = self.env['res.currency.rate'].search([
-    #         ('currency_id', '=', to_currency.id),
-    #         ('name', '<=', fields.Date.today())
-    #     ], order='name desc', limit=1)
-    #
-    #     if not to_rate:
-    #         raise ValidationError(f"No exchange rate found for {to_currency.name}.")
-    #
-    #     return rate.rate / to_rate.rate
-
-
 
     def get_tax_rate(self, tax):
         return tax.amount if tax else 0.0
@@ -194,11 +225,21 @@ class AccountMove(models.Model):
                 'export_country_id': export_country.id if export_country else None,
                 'export_country_name': export_country_name
             })
+            # Check and save exchange rate for foreign currencies
+            if self.currency_id.name != 'ZMW':
+                exchange_rate = self.get_exchange_rate(self.currency_id, self.env.company.currency_id)
+                self.write({
+                    'exchange_rate': round(exchange_rate, 2)
+                })
 
         if self.move_type == 'out_invoice':
             payload = self.generate_sales_payload()
             self._post_to_api("http://localhost:8085/trnsSales/saveSales", payload, "Save Sales API Response resultMsg")
         elif self.move_type == 'out_refund':
+            # Check internet connection
+            if not self._is_internet_connected():
+                raise UserError("Cannot perform credit note offline. Please check your internet connection.")
+
             payload = self.credit_note_payload()
             self._post_to_api("http://localhost:8085/trnsSales/saveSales", payload,
                               "Save Credit Note API Response resultMsg")
@@ -236,8 +277,18 @@ class AccountMove(models.Model):
 
             if invoice.move_type == 'in_refund':
                 self._debit_update_stock_quantities(invoice)
+        self.generate_qr_code_button()
 
         return res
+
+    def _is_internet_connected(self):
+        try:
+            # Try to connect to a reliable public host
+            socket.create_connection(("8.8.8.8", 53))
+            return True
+        except OSError:
+            return False
+
 
     def _update_stock_quantities(self, invoice):
         for line in invoice.invoice_line_ids:
@@ -286,7 +337,6 @@ class AccountMove(models.Model):
         tpin, lpo, export_country_code = self.get_sales_order_fields()
 
         exchange_rate = self.get_exchange_rate(self.currency_id, self.env.company.currency_id)
-        # discount_amount = round((line.quantity * line.price_unit) * (line.discount/100), 2)
         payload = {
             "tpin": "1018798746",
             "bhfId": "000",
