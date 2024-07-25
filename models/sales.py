@@ -18,7 +18,7 @@ class AccountMove(models.Model):
 
     sale_type = fields.Char('Sale Type Code', default='N')
     receipt_type = fields.Char('Receipt Type Code', default='S')
-    payment_type = fields.Char('Payment Type Code', default='01')
+    # payment_type = fields.Char('Payment Type Code', default='01')
     sales_status = fields.Char('Sales Status Code', default='02')
     tpin = fields.Char(string='TPIN', size=10)
     export_country_id = fields.Many2one('res.country', string='Export Country')
@@ -58,8 +58,18 @@ class AccountMove(models.Model):
         ('04', 'Other [specify]')
     ], string='Debit Note Reason')
     exchange_rate = fields.Char(string='Exchange rate')
+    payment_type = fields.Selection([
+        ('01', 'CASH'),
+        ('02', 'CREDIT'),
+        ('03', 'CASH/CREDIT'),
+        ('04', 'BANK CHECK'),
+        ('05', 'DEBIT&CREDIT CARD'),
+        ('06', 'MOBILE MONEY'),
+        ('07', 'BANK TRANSFER'),
+        ('08', 'OTHER'),
+    ], string='Payment Method', required=False, default="01")
 
-    @api.depends('reversal_reason', 'debit_note_reason')
+    @api.depends('reversal_reason', 'debit_note_reason', 'payment_type')
     def _compute_reason_text(self):
         reversal_reason_dict = dict([
             ('01', 'Missing Quantity'),
@@ -84,12 +94,28 @@ class AccountMove(models.Model):
             ('04', 'Other [specify]')
         ])
 
+        payment_type_dict = dict([
+            ('01', 'CASH'),
+            ('02', 'CREDIT'),
+            ('03', 'CASH/CREDIT'),
+            ('04', 'BANK CHECK'),
+            ('05', 'DEBIT&CREDIT CARD'),
+            ('06', 'MOBILE MONEY'),
+            ('07', 'BANK TRANSFER'),
+            ('08', 'OTHER')
+        ])
+
         for record in self:
             record.reversal_reason_text = reversal_reason_dict.get(record.reversal_reason, "")
             record.debit_note_reason_text = debit_note_reason_dict.get(record.debit_note_reason, "")
+            record.payment_type_text = payment_type_dict.get(record.payment_type, "")
 
     reversal_reason_text = fields.Char(string='Reversal Reason Text', compute='_compute_reason_text')
     debit_note_reason_text = fields.Char(string='Debit Note Reason Text', compute='_compute_reason_text')
+    payment_type_text = fields.Char(string='Payment Type', compute='_compute_reason_text')
+
+    def action_print_custom_invoice(self):
+        return self.env.ref('zra_smart_invoice.custom_account_invoices').report_action(self)
 
     @api.model
     def generate_qr_code_button(self):
@@ -321,7 +347,7 @@ class AccountMove(models.Model):
             "custNm": self.partner_id.name,
             "salesTyCd": self.sale_type or 'N',
             "rcptTyCd": self.receipt_type or 'S',
-            "pmtTyCd": self.payment_type or '01',
+            "pmtTyCd": self.payment_type,
             "salesSttsCd": self.sales_status or '02',
             "cfmDt": self.invoice_date.strftime('%Y%m%d%H%M%S') if self.invoice_date else None,
             "salesDt": datetime.now().strftime('%Y%m%d'),

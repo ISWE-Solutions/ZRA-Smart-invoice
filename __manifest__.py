@@ -37,6 +37,8 @@ Intergration with Zra smart invoice system
         # 'views/debit_note.xml',
         'views/invoice_reports.xml',
         'data/tax_types_data.xml',
+        'report/custom_invoice_report.xml',
+        'report/custom_invoice_report_action.xml',
     ],
     # only loaded in demonstration mode
     'demo': [
