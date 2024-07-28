@@ -12,10 +12,6 @@
                                 confirm="Are you sure you want to Validate the purchase?"
                                 invisible="status != 'draft'"
                                 />
-<!--                        <button name="reject_purchase" type="object" string="Reject Purchase"-->
-<!--                                class="oe_highlight btn btn-danger"-->
-<!--                                confirm="Are you sure you want to reject the Purchase?"-->
-<!--                                invisible="status != 'draft'"/>-->
                     </header>
                     <sheet>
                         <group>
@@ -130,16 +126,5 @@
             <field name="view_id" ref="view_purchase_data_tree"/>
         </record>
 
-
-        <!-- Parent Menu Item -->
-        <menuitem id="menu_select_si_purchase" name="ZRA SI Purchase" parent="purchase.menu_purchase_root"/>
-
-        <!-- Sub Menu Item for Detailed Form -->
-        <menuitem id="menu_select_si_purchase_detailed" name="View Purchase" parent="menu_select_si_purchase"
-                  action="action_purchase_data"/>
-
-        <!-- Sub Menu Item for Simplified Form -->
-        <menuitem id="menu_select_si_purchase_simple" name="Check Si Purchase" parent="menu_select_si_purchase"
-                  action="action_purchase_data_simple"/>
     </data>
 </odoo>

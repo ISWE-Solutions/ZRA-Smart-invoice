@@ -35,7 +35,7 @@
                 </xpath>
 
                 <xpath expr="//page[@name='other_info']" position="after">
-                    <page string="ZRA Info">
+                    <page string="ZRA SI Info">
                         <group>
                             <group>
                                 <field name="rcpt_no" readonly="1"/>

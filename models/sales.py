@@ -9,9 +9,8 @@ import qrcode
 import base64
 from io import BytesIO
 
-
-
 _logger = logging.getLogger(__name__)
+
 
 class AccountMove(models.Model):
     _inherit = 'account.move'
@@ -35,6 +34,19 @@ class AccountMove(models.Model):
     mrc_no = fields.Char(string='MRC No')
     qr_code_url = fields.Char(string='QR Code URL')
     qr_code_image = fields.Char(string='QR Code Image')
+    datetime_field = fields.Datetime(string='Date Time', default=fields.Datetime.now)
+
+    def get_formatted_vsdc_rcpt_pbct_date(self):
+        for record in self:
+            if record.vsdc_rcpt_pbct_date:
+                try:
+                    # Extract and format the date string
+                    formatted_date = datetime.strptime(record.vsdc_rcpt_pbct_date, "%Y%m%d%H%M%S").strftime(
+                        "%Y-%m-%d %H:%M:%S")
+                    return formatted_date
+                except ValueError:
+                    return "Invalid Date Format"
+        return ""
 
     reversal_reason = fields.Selection([
         ('01', 'Missing Quantity'),
@@ -169,6 +181,7 @@ class AccountMove(models.Model):
             raise ValidationError(f"No exchange rate found for {to_currency.name}.")
 
         return rate.inverse_company_rate / to_rate.inverse_company_rate
+
     def get_primary_tax(self, partner):
         if partner.tax_id:
             return partner.tax_id[0]
@@ -179,11 +192,13 @@ class AccountMove(models.Model):
                     return line.tax_ids[0]
         return None
 
+    def get_tax_description(self, tax):
+        if tax:
+            return tax.description or ""
+        return ""
+
     def get_tax_rate(self, tax):
         return tax.amount if tax else 0.0
-
-    def get_tax_description(self, tax):
-        return tax.description if tax else ''
 
     def calculate_custom_subtotal(self):
         custom_subtotal = 0.0
@@ -192,9 +207,12 @@ class AccountMove(models.Model):
         return custom_subtotal
 
     def calculate_taxable_amount(self, lines, tax_category):
-        filtered_lines = [line for line in lines if
-                          self.get_tax_description(self.get_primary_tax(self.partner_id)) == tax_category]
-        return round(sum(line.price_subtotal for line in filtered_lines), 2)
+        total_amount = 0.0
+        for line in lines:
+            tax_description = self.get_tax_description(line.tax_ids)
+            if tax_category in tax_description:
+                total_amount += line.price_subtotal
+        return total_amount
 
     def calculate_tax_amount(self, lines, tax_category):
         filtered_lines = [line for line in lines if
@@ -216,17 +234,15 @@ class AccountMove(models.Model):
 
         if self.move_type in ['out_invoice', 'out_refund', 'in_refund']:
             tpin, lpo, export_country_code = self.get_sales_order_fields()
-            # Fetch the country record based on the export_country_code
             export_country = self.env['res.country'].search([('code', '=', export_country_code)], limit=1)
             export_country_name = export_country.name if export_country else None
 
-            # Save the country name along with other fields
             self.write({
                 'lpo': lpo,
                 'export_country_id': export_country.id if export_country else None,
                 'export_country_name': export_country_name
             })
-            # Check and save exchange rate for foreign currencies
+
             if self.currency_id.name != 'ZMW':
                 exchange_rate = self.get_exchange_rate(self.currency_id, self.env.company.currency_id)
                 self.write({
@@ -237,7 +253,6 @@ class AccountMove(models.Model):
             payload = self.generate_sales_payload()
             self._post_to_api("http://localhost:8085/trnsSales/saveSales", payload, "Save Sales API Response resultMsg")
         elif self.move_type == 'out_refund':
-            # Check internet connection
             if not self._is_internet_connected():
                 raise UserError("Cannot perform credit note offline. Please check your internet connection.")
 
@@ -260,7 +275,6 @@ class AccountMove(models.Model):
             debit_note_reason = debit_reversal_move.reason if debit_reversal_move else "01"
             self.write({'debit_note_reason': debit_note_reason})
 
-        # Find and validate the corresponding sales order
         for invoice in self:
             if invoice.move_type == 'out_invoice' and invoice.invoice_origin:
                 # Find the related stock picking
@@ -272,12 +286,15 @@ class AccountMove(models.Model):
                     picking.action_confirm()
                     picking.action_assign()
                     picking.button_validate()
+            else:
+                self._accounting_update_stock_quantities(invoice)
 
             if invoice.move_type == 'out_refund':
                 self._update_stock_quantities(invoice)
 
             if invoice.move_type == 'in_refund':
                 self._debit_update_stock_quantities(invoice)
+
         self.generate_qr_code_button()
 
         return res
@@ -290,7 +307,24 @@ class AccountMove(models.Model):
         except OSError:
             return False
 
+    def _accounting_update_stock_quantities(self, invoice):
+        for line in invoice.invoice_line_ids:
+            product = line.product_id
+            quantity = line.quantity
+            stock_quant = self.env['stock.quant'].search([
+                ('product_id', '=', product.id),
+                ('location_id.usage', '=', 'internal')
+            ], limit=1)
 
+            if stock_quant:
+                stock_quant.quantity -= quantity
+            else:
+                # If no stock_quant is found, create a new one
+                self.env['stock.quant'].create({
+                    'product_id': product.id,
+                    'location_id': self.env['stock.location'].search([('usage', '=', 'internal')], limit=1).id,
+                    'quantity': quantity,
+                })
     def _update_stock_quantities(self, invoice):
         for line in invoice.invoice_line_ids:
             product = line.product_id
@@ -309,7 +343,6 @@ class AccountMove(models.Model):
                     'location_id': self.env['stock.location'].search([('usage', '=', 'internal')], limit=1).id,
                     'quantity': quantity,
                 })
-
     def _debit_update_stock_quantities(self, invoice):
         for line in invoice.invoice_line_ids:
             product = line.product_id
@@ -331,12 +364,7 @@ class AccountMove(models.Model):
 
     def generate_sales_payload(self):
         current_user = self.env.user
-        subtotal_before_tax = self.calculate_custom_subtotal()
-        sales_move = self.env['account.move'].browse(self._context.get('active_id'))
-        partner = sales_move.partner_id
-        print('sales Id', sales_move)
         tpin, lpo, export_country_code = self.get_sales_order_fields()
-
         exchange_rate = self.get_exchange_rate(self.currency_id, self.env.company.currency_id)
         payload = {
             "tpin": "1018798746",
@@ -434,12 +462,13 @@ class AccountMove(models.Model):
                     "prc": round(self.calculate_tax_inclusive_price(line), 2),
                     "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
                     "dcRt": line.discount,
-                    "dcAmt": round((line.quantity * self.calculate_tax_inclusive_price(line)) * (line.discount/100), 2),
+                    "dcAmt": round((line.quantity * self.calculate_tax_inclusive_price(line)) * (line.discount / 100),
+                                   2),
                     "isrccCd": "",
                     "isrccNm": "",
                     "isrcRt": 0.0,
                     "isrcAmt": 0.0,
-                    "vatCatCd": self.get_tax_description(self.get_primary_tax(partner)),
+                    "vatCatCd": self.get_tax_description(line.tax_ids),
                     "exciseTxCatCd": None,
                     "vatTaxblAmt": round(line.price_subtotal, 2),
                     "exciseTaxblAmt": 0.0,
@@ -488,7 +517,7 @@ class AccountMove(models.Model):
                     "prc": round(line.price_unit, 2),
                     "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
                     "totDcAmt": 0,
-                    "vatCatCd": self.get_tax_description(self.get_primary_tax(partner)),
+                    "vatCatCd": self.get_tax_description(line.tax_ids),
                     "exciseTxCatCd": "EXEEG",
                     "vatAmt": round(line.price_total - line.price_subtotal, 2),
                     "taxblAmt": 0,
@@ -505,16 +534,6 @@ class AccountMove(models.Model):
         self._post_to_stock_api('http://localhost:8085/stock/saveStockItems', payload_stock_items,
                                 "Save Stock Item API Response Endpoint")
 
-        for line in self.invoice_line_ids:
-            # Fetch the available quantity from the stock quant model
-            available_quants = self.env['stock.quant'].search([
-                ('product_id', '=', line.product_id.id),
-                ('location_id.usage', '=', 'internal')
-            ])
-            available_qty = sum(quant.quantity for quant in available_quants)
-
-            remaining_qty = available_qty - line.quantity
-
         payload_stock_master = {
             "tpin": "1018798746",
             "bhfId": "000",
@@ -525,10 +544,15 @@ class AccountMove(models.Model):
             "stockItemList": [
                 {
                     "itemCd": line.product_id.product_tmpl_id.item_Cd,
-                    "rsdQty": remaining_qty
-                } for line in self.invoice_line_ids
+                    # Calculate available_qty and remaining_qty for each item
+                    "rsdQty": sum(quant.quantity for quant in self.env['stock.quant'].search([
+                        ('product_id', '=', line.product_id.id),
+                        ('location_id.usage', '=', 'internal')
+                    ])) - line.quantity
+                } for index, line in enumerate(self.invoice_line_ids)
             ]
         }
+
         self._post_to_stock_api('http://localhost:8085/stockMaster/saveStockMaster', payload_stock_master,
                                 "Stock Master Endpoint response")
 
@@ -668,12 +692,13 @@ class AccountMove(models.Model):
                     "prc": round(self.calculate_tax_inclusive_price(line), 2),
                     "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
                     "dcRt": line.discount,
-                    "dcAmt": round((line.quantity * self.calculate_tax_inclusive_price(line)) * (line.discount/100), 2),
+                    "dcAmt": round((line.quantity * self.calculate_tax_inclusive_price(line)) * (line.discount / 100),
+                                   2),
                     "isrccCd": "",
                     "isrccNm": "",
                     "isrcRt": 0.0,
                     "isrcAmt": 0.0,
-                    "vatCatCd": self.get_tax_description(self.get_primary_tax(partner)),
+                    "vatCatCd": self.get_tax_description(line.tax_ids),
                     "exciseTxCatCd": None,
                     "vatTaxblAmt": round(line.price_subtotal, 2),
                     "exciseTaxblAmt": 0.0,
@@ -721,7 +746,7 @@ class AccountMove(models.Model):
                     "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
                     "totDcAmt": 0,
                     "taxblAmt": line.price_subtotal,
-                    "vatCatCd": self.get_tax_description(self.get_primary_tax(partner)),
+                    "vatCatCd": self.get_tax_description(line.tax_ids),
                     "iplCatCd": "IPL1",
                     "tlCatCd": "TL",
                     "exciseTxCatCd": "EXEEG",
@@ -1034,12 +1059,13 @@ class AccountMove(models.Model):
                     "prc": round(self.calculate_tax_inclusive_price(line), 2),
                     "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
                     "dcRt": line.discount,
-                    "dcAmt": round((line.quantity * self.calculate_tax_inclusive_price(line)) * (line.discount/100), 2),
+                    "dcAmt": round((line.quantity * self.calculate_tax_inclusive_price(line)) * (line.discount / 100),
+                                   2),
                     "isrccCd": "",
                     "isrccNm": "",
                     "isrcRt": 0.0,
                     "isrcAmt": 0.0,
-                    "vatCatCd": self.get_tax_description(self.get_primary_tax(partner)),
+                    "vatCatCd": self.get_tax_description(line.tax_ids),
                     "exciseTxCatCd": None,
                     "vatTaxblAmt": round(line.price_subtotal, 2),
                     "exciseTaxblAmt": 0.0,
@@ -1085,7 +1111,7 @@ class AccountMove(models.Model):
                     "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
                     "totDcAmt": 0,
                     "taxblAmt": line.price_subtotal,
-                    "vatCatCd": self.get_tax_description(self.get_primary_tax(line.partner_id)) or 'RVAT',
+                    "vatCatCd": self.get_tax_description(line.tax_ids),
                     "iplCatCd": "IPL1",
                     "tlCatCd": "TL",
                     "exciseTxCatCd": "EXEEG",
@@ -1211,7 +1237,6 @@ class AccountDebitNoteWizard(models.TransientModel):
 
     def _process_moves(self, debit_note):
         debit_note.write({'state': 'draft'})
-
 
 class AccountMoveSend(models.TransientModel):
     _inherit = 'account.move.send'

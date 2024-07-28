@@ -11,6 +11,7 @@
                         <button name="action_confirm_import" type="object" string="Validate Import"
                                 class="oe_highlight btn btn-primary"
                                 confirm="Are you sure you want to Validate the import?"
+                                invisible="status != 'draft' "
 
                         />
                     </header>
@@ -112,13 +113,7 @@
         </record>
 
         <!-- Parent Menu Item -->
-        <menuitem id="menu_select_si_import" name="ZRA SI Imports" parent="stock.menu_stock_root"/>
 
-        <menuitem id="menu_select_si_import_simple" name="Check SI Imports" parent="menu_select_si_import"
-                  action="action_import_data_simple"/>
-
-        <menuitem id="menu_select_si_import_detailed" name="Select Imports" parent="menu_select_si_import"
-                  action="action_import_data"/>
         <!-- Sub Menu Items -->
     </data>
 </odoo>

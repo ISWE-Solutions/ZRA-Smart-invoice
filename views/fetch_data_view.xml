@@ -12,13 +12,16 @@
                         <block title="ZRA">
                             <setting help="ZRA fetching of classifications and class codes for smart invoice">
                                 <div class="o_setting_container">
-                                    <h2>Custom Data Fetching</h2>
-                                    <div class="app_settings_block" data-key="custom_data_fetching">
-                                        <group>
-                                            <button name="fetch_data" string="Fetch Data" type="object"
-                                                    class="btn-primary"/>
-                                        </group>
-                                    </div>
+                                    <h2>Data Fetching</h2>
+                                    <br/>
+                                </div>
+                                <p>This action is used to fetch item classification and general codes used for Zra
+                                    smart invoice
+                                </p>
+                                <div class="app_settings_block" data-key="custom_data_fetching">
+                                    <button name="fetch_data" string="Fetch Data" type="object"
+                                            class="btn-primary" style="width:50%;"/>
+
                                 </div>
                             </setting>
                         </block>

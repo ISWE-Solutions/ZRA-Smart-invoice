@@ -1,46 +1,19 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-    <record id="view_move_form_debit_note" model="ir.ui.view">
-        <field name="name">account.move.form.debit.note</field>
-        <field name="model">account.move</field>
-        <field name="inherit_id" ref="account.view_move_form"/>
-        <field name="arch" type="xml">
-            <!-- Conditionally display the "Debit Note" button using modifiers -->
-            <xpath expr="//header" position="inside">
-                <button name="action_debit_note_create"
-                        string="Debit Note"
-                        type="object"
-                        class="btn-secondary"
-                        groups="account.group_account_invoice"
-                        invisible="state != 'draft' or name == '/'"/>
-            </xpath>
-        </field>
-    </record>
-
-    <record id="view_debit_note_wizard_form" model="ir.ui.view">
-        <field name="name">debit.note.wizard.form</field>
-        <field name="model">debit.note.wizard</field>
-        <field name="arch" type="xml">
-            <form string="Create Debit Note">
-                <group>
-                    <field name="reason"/>
-                    <field name="move_id" invisible="0"/>
-                    <field name="date" invisible="0"/>
-                </group>
-                <footer>
-                    <button string="Create" type="object" name="create_debit_note" class="btn-primary"/>
-                    <button string="Cancel" class="btn-secondary" special="cancel"/>
-                </footer>
-            </form>
-        </field>
-    </record>
-
-    <record id="action_debit_note_wizard" model="ir.actions.act_window">
-        <field name="name">Create Debit Note</field>
-        <field name="res_model">debit.note.wizard</field>
-        <field name="view_mode">form</field>
-        <field name="view_id" ref="view_debit_note_wizard_form"/>
-        <field name="target">new</field>
-        <field name="context">{'default_move_id': active_id}</field>
-    </record>
+    <data>
+<!--        Inherit the form view of account.move to add a button for creating a debit note-->
+        <record id="account_move_form_inherit_debit_note" model="ir.ui.view">
+            <field name="name">account.move.form.inherit.debit.note</field>
+            <field name="model">account.move</field>
+            <field name="inherit_id" ref="account.view_move_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//header" position="inside">
+                    <button name="%(action_view_account_move_debit)d" type="action" string="Debit Note"
+                            class="btn-secondary" groups="account.group_account_invoice"
+                            context="{'default_move_ids': [active_id], 'default_move_type': 'in_refund'}"
+                            invisible="state != 'posted'"/>
+                </xpath>
+            </field>
+        </record>
+    </data>
 </odoo>
