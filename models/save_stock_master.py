@@ -1,6 +1,7 @@
 import requests
 from odoo import models, api
 import logging
+import json
 
 _logger = logging.getLogger(__name__)
 
@@ -9,6 +10,8 @@ class StockChangeProductQty(models.TransientModel):
     _inherit = 'stock.change.product.qty'
 
     def change_product_qty(self):
+
+        current_user = self.env.user
         _logger.info('Entering change_product_qty method.')
         print('Entering change_product_qty method.')
 
@@ -26,19 +29,20 @@ class StockChangeProductQty(models.TransientModel):
             payload = {
                 "tpin": "1018798746",
                 "bhfId": "000",
-                "regrId": "Admin",
-                "regrNm": "Admin",
-                "modrNm": "Admin",
-                "modrId": "Admin",
+                "regrId": current_user.id,
+                "regrNm": current_user.name,
+                "modrNm": current_user.name,
+                "modrId": current_user.id,
                 "stockItemList": [
                     {
-                        "itemCd": product.default_code or product.id,
+                        "itemCd": product_template.item_Cd,
                         "rsdQty": new_qty
                     }
                 ]
             }
 
             try:
+                print('Payload being sent:', json.dumps(payload, indent=4))
                 # Make the POST request to the given endpoint
                 response = requests.post('http://localhost:8085/stockMaster/saveStockMaster', json=payload)
                 response.raise_for_status()
@@ -69,6 +73,11 @@ class StockChangeProductQty(models.TransientModel):
 class StockPickingReturn(models.TransientModel):
     _inherit = 'stock.return.picking'
 
+    def get_sales_order_fields(self):
+        """Retrieve tpin, lpo, and export_country_id from related sale order."""
+        sale_order = self.env['sale.order'].search([('name', '=', self.invoice_origin)], limit=1)
+        return sale_order.tpin, sale_order.lpo, sale_order.export_country_id.code if sale_order.export_country_id else None
+
     def create_returns(self):
         _logger.info('Entering create_returns method.')
         print('Entering create_returns method.')
@@ -82,6 +91,13 @@ class StockPickingReturn(models.TransientModel):
         return result
 
     def _process_return_moves(self):
+
+        tpin, lpo, export_country_code = self.get_sales_order_fields()
+        current_user = self.env.user
+
+        credit_move = self.env['account.move'].browse(self._context.get('active_id'))
+        partner = credit_move.partnerid
+
         for picking in self.env['stock.picking'].browse(self._context.get('active_ids', [])):
             _logger.info(f'Processing return for picking with type: {picking.picking_type_id.code}')
             print(f'Processing return for picking with type: {picking.picking_type_id.code}')
@@ -103,89 +119,78 @@ class StockPickingReturn(models.TransientModel):
                         "sarNo": 1,
                         "orgSarNo": 0,
                         "regTyCd": "M",
-                        "custTpin": None,
-                        "custNm": None,
+                        "custTpin": tpin or None,
+                        "custNm": self.partner_id.mame,
                         "custBhfId": "000",
                         "sarTyCd": "13",
-                        "ocrnDt": "20200126",
-                        "totItemCnt": 2,
-                        "totTaxblAmt": 70000,
-                        "totTaxAmt": 12000,
-                        "totAmt": 70000,
+                        "ocrnDt": self.invoive_date.strftime('%Y%m%d') if self.invoice_date else None,
+                        "totItemCnt": len(self.invoice_line_ids),
+                        "totTaxblAmt": round(sum(line.price_total for line in self.invoice_lines_ids), 2),
+                        "totTaxAmt": round(
+                            sum(line.price_total - line.price_subtotal for line in self.invoice_line_ids), 2),
+                        "totAmt": round(sum(line.price_total for line in self.invoice_line_ids), 2),
                         "remark": None,
-                        "regrId": "Admin",
-                        "regrNm": "Admin",
-                        "modrNm": "Admin",
-                        "modrId": "Admin",
+                        "regrId": current_user.id,
+                        "regrNm": current_user.name,
+                        "modrNm": current_user.name,
+                        "modrId": current_user.id,
                         "itemList": [
                             {
-                                "itemSeq": 1,
-                                "itemCd": "RW1NTXU0000006",
-                                "itemClsCd": "5059690800",
-                                "itemNm": "AMAZI Rwenzoli",
-                                "bcd": None,
-                                "pkgUnitCd": "NT",
-                                "pkg": 10,
-                                "qtyUnitCd": "U",
-                                "qty": 10,
+                                "itemSeq": index + 1,
+                                "itemCd": line.product_id.product_tmpl_id.item_Cd,
+                                "itemClsCd": line.product_id.product_tmpl_id.item_cls_cd,
+                                "itemNm": line.product_id.name,
+                                "bcd": line.product_id.barcode or None,
+                                "pkgUnitCd": line.product_id.product_tmpl_id.packaging_unit_cd,
+                                "pkg": line.quantity,
+                                "qtyUnitCd": line.product_id.product_tmpl_id.quantity_unit_cd,
+                                "qty": line.quantity,
                                 "itemExprDt": None,
-                                "prc": 3500,
-                                "splyAmt": 35000,
+                                "prc": round(self.calculate_tax_inclusive_price(line), 2),
+                                "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
                                 "totDcAmt": 0,
-                                "taxblAmt": 35000,
-                                "vatCatCd": "A",
+                                "taxblAmt": line.price_subtotal,
+                                "vatCatCd": self.get_tax_description(self.get_primary_tax(partner)),
                                 "iplCatCd": "IPL1",
                                 "tlCatCd": "TL",
                                 "exciseTxCatCd": "EXEEG",
-                                "vatAmt": 30508,
-                                "iplAmt": 30508,
-                                "tlAmt": 30508,
-                                "exciseTxAmt": 30508,
-                                "taxAmt": 6000,
-                                "totAmt": 35000
-                            },
-                            {
-                                "itemSeq": 2,
-                                "itemCd": "RW2TYXLTR0000001",
-                                "itemClsCd": "5059690800",
-                                "itemNm": "MAZUT",
-                                "bcd": None,
-                                "pkgUnitCd": "NT",
-                                "pkg": 10,
-                                "qtyUnitCd": "U",
-                                "qty": 10,
-                                "itemExprDt": None,
-                                "prc": 3500,
-                                "splyAmt": 35000,
-                                "totDcAmt": 0,
-                                "taxblAmt": 35000,
-                                "vatCatCd": "A",
-                                "iplCatCd": "IPL1",
-                                "tlCatCd": "TL",
-                                "exciseTxCatCd": "EXEEG",
-                                "vatAmt": 30508,
-                                "iplAmt": 30508,
-                                "tlAmt": 30508,
-                                "exciseTxAmt": 30508,
-                                "totAmt": 35000
-                            }
+                                "vatAmt": round(line.price_total - line.price_subtotal, 2),
+                                "iplAmt": 0.0,
+                                "tlAmt": 0.0,
+                                "exciseTxAmt": 0.0,
+                                "taxAmt": round(line.price_total - line.price_subtotal, 2),
+                                "totAmt": round(line.price_total, 2),
+                            } for index, line in enumerate(self.invoice_line_ids)
                         ]
                     }
+
+                    for line in self.invoice_line_ids:
+                        # Fetch the available quantity from the stock quant model
+                        available_quants = self.env['stock.quant'].search([
+                            ('product_id', '=', line.product_id.id),
+                            ('location_id.usage', '=', 'internal')
+                        ])
+                        available_qty = sum(quant.quantity for quant in available_quants)
+
+                        remaining_qty = available_qty + line.quantity
 
                     payload_stock_master = {
                         "tpin": "1018798746",
                         "bhfId": "000",
-                        "regrId": "Admin",
-                        "regrNm": "Admin",
-                        "modrNm": "Admin",
-                        "modrId": "Admin",
+                        "regrId": current_user.id,
+                        "regrNm": current_user.name,
+                        "modrNm": current_user.name,
+                        "modrId": current_user.id,
                         "stockItemList": [
                             {
-                                "itemCd": product.default_code or product.id,
-                                "rsdQty": -return_qty  # Decrease the quantity
+                                "itemCd": line.product_id.product_tmpl_id.item_Cd,
+                                "rsdQty": remaining_qty
                             }
                         ]
                     }
+
+                    _logger.info(f'Payload for stockMaster/saveStockMaster: {payload_stock_master}')
+                    print(f'Payload for stockMaster/saveStockMaster: {payload_stock_items}')
 
                     result_msg_stock_items = self._post_to_api('http://localhost:8085/stock/saveStockItems',
                                                                payload_stock_items, "Stock items update")
@@ -218,6 +223,7 @@ class StockPickingReturn(models.TransientModel):
                 print(f'Skipping return for picking with type: {picking.picking_type_id.code}')
 
     def _post_to_api(self, url, payload, success_message_prefix):
+        print('Payload being sent:', json.dumps(payload, indent=4))
         try:
             response = requests.post(url, json=payload)
             response.raise_for_status()
