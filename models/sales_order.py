@@ -26,9 +26,6 @@ class SaleOrder(models.Model):
                     line.tax_id = [(6, 0, [self.partner_id.tax_id.id])]
                 else:
                     line.tax_id = False
-            # Remove setting of export_country_id from the partner address
-            # if self.partner_id.tax_id and self.partner_id.tax_id.tax_scope == 'export':
-            #     self.export_country_id = self.env.ref('base.us').id  # Default to 'United States'
 
 class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'

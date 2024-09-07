@@ -7,6 +7,6 @@ access.import.data,access_import_data,zra_smart_invoice.model_import_data,base.g
 access.import.item,access_import_item,zra_smart_invoice.model_import_item,base.group_user,1,1,1,1
 access.item.code.sequence,access_item_code_sequence,zra_smart_invoice.model_item_code_sequence,base.group_user,1,1,1,1
 access.zra.item.data,access_zra_item_data,zra_smart_invoice.model_zra_item_data,base.group_user,1,1,1,1
-access.quantity.unit.data,acess_quantity_unit_data,zra_smart_invoice.model_quantity_unit_data,base.group_user,1,1,1,1
+access.quantity.unit.data,access_quantity_unit_data,zra_smart_invoice.model_quantity_unit_data,base.group_user,1,1,1,1
 access.packaging.unit.data,access_packaging_unit_data,zra_smart_invoice.model_packaging_unit_data,base.group_user,1,1,1,1
 access.country.data,access_country_data,zra_smart_invoice.model_country_data,base.group_user,1,1,1,1

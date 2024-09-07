@@ -1,4 +1,5 @@
 from odoo import models, fields, api, _
+from odoo.exceptions import ValidationError, UserError
 import logging
 import requests
 
@@ -232,7 +233,7 @@ class ProductTemplate(models.Model):
             self.action_client_action(result_msg, 'success')
         except requests.exceptions.RequestException as e:
             error_message = str(e)
-            self._log_error(vals, error_message)
+            # self.print(vals, error_message)
             self.message_post(
                 body=f"Exception occurred: {error_message}\nProduct Name: {self.name}, Classification Code: {self.item_cls_cd}")
             self.action_client_action(error_message, 'danger')

@@ -126,6 +126,38 @@ class AccountMove(models.Model):
     debit_note_reason_text = fields.Char(string='Debit Note Reason Text', compute='_compute_reason_text')
     payment_type_text = fields.Char(string='Payment Type', compute='_compute_reason_text')
 
+    @api.constrains('tpin')
+    def _check_tpin(self):
+        for record in self:
+            if record.tpin and not record.tpin.isdigit():
+                raise ValidationError('TPIN must contain only numbers.')
+            if record.tpin and len(record.tpin) > 10:
+                raise ValidationError('TPIN must be at most 10 digits.')
+
+    @api.onchange('partner_id')
+    def _onchange_partner_id(self):
+        if self.partner_id:
+            # If there's a related sale order, get the TPIN and LPO from there
+            sale_orders = self.env['sale.order'].search([('partner_id', '=', self.partner_id.id)], limit=1)
+            if sale_orders:
+                sale_order = sale_orders[0]
+                self.tpin = sale_order.tpin or ''
+                self.lpo = sale_order.lpo or ''
+                self.export_country_id = sale_order.export_country_id or False
+
+            # Otherwise, use partner's default information if available
+            if not self.tpin:
+                self.tpin = self.partner_id.tpin or ''
+            if not self.lpo:
+                self.lpo = self.partner_id.lpo or ''
+
+            # Set taxes based on partner's default tax settings if applicable
+            for line in self.invoice_line_ids:
+                if self.partner_id.tax_id:
+                    line.tax_ids = [(6, 0, [self.partner_id.tax_id.id])]
+                else:
+                    line.tax_ids = False
+
     def action_print_custom_invoice(self):
         return self.env.ref('zra_smart_invoice.custom_account_invoices').report_action(self)
 
@@ -310,6 +342,8 @@ class AccountMove(models.Model):
     def _accounting_update_stock_quantities(self, invoice):
         for line in invoice.invoice_line_ids:
             product = line.product_id
+            if not product:  # Skip lines without a product
+                continue
             quantity = line.quantity
             stock_quant = self.env['stock.quant'].search([
                 ('product_id', '=', product.id),
@@ -323,11 +357,14 @@ class AccountMove(models.Model):
                 self.env['stock.quant'].create({
                     'product_id': product.id,
                     'location_id': self.env['stock.location'].search([('usage', '=', 'internal')], limit=1).id,
-                    'quantity': quantity,
+                    'quantity': -quantity,  # Deduct the quantity
                 })
+
     def _update_stock_quantities(self, invoice):
         for line in invoice.invoice_line_ids:
             product = line.product_id
+            if not product:  # Skip lines without a product
+                continue
             quantity = line.quantity
             stock_quant = self.env['stock.quant'].search([
                 ('product_id', '=', product.id),
@@ -343,9 +380,12 @@ class AccountMove(models.Model):
                     'location_id': self.env['stock.location'].search([('usage', '=', 'internal')], limit=1).id,
                     'quantity': quantity,
                 })
+
     def _debit_update_stock_quantities(self, invoice):
         for line in invoice.invoice_line_ids:
             product = line.product_id
+            if not product:  # Skip lines without a product
+                continue
             quantity = line.quantity
             stock_quant = self.env['stock.quant'].search([
                 ('product_id', '=', product.id),
@@ -359,7 +399,7 @@ class AccountMove(models.Model):
                 self.env['stock.quant'].create({
                     'product_id': product.id,
                     'location_id': self.env['stock.location'].search([('usage', '=', 'internal')], limit=1).id,
-                    'quantity': quantity,
+                    'quantity': -quantity,  # Deduct the quantity
                 })
 
     def generate_sales_payload(self):
@@ -370,7 +410,7 @@ class AccountMove(models.Model):
             "tpin": "1018798746",
             "bhfId": "000",
             "orgInvcNo": 0,
-            "cisInvcNo": self.name + "0",
+            "cisInvcNo": self.name + "-0",
             "custTpin": tpin or "1000000000",
             "custNm": self.partner_id.name,
             "salesTyCd": self.sale_type or 'N',
@@ -392,7 +432,7 @@ class AccountMove(models.Model):
             "taxblAmtC2": self.calculate_taxable_amount(self.invoice_line_ids, 'C2'),
             "taxblAmtC3": self.calculate_taxable_amount(self.invoice_line_ids, 'C3'),
             "taxblAmtD": self.calculate_taxable_amount(self.invoice_line_ids, 'D'),
-            "taxblAmtRvat": self.calculate_taxable_amount(self.invoice_line_ids, 'Rvat'),
+            "taxblAmtRvat": self.calculate_taxable_amount(self.invoice_line_ids, 'RVAT'),
             "taxblAmtE": self.calculate_taxable_amount(self.invoice_line_ids, 'E'),
             "taxblAmtF": self.calculate_taxable_amount(self.invoice_line_ids, 'F'),
             "taxblAmtIpl1": self.calculate_taxable_amount(self.invoice_line_ids, 'Ipl1'),

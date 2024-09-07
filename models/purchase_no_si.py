@@ -35,6 +35,7 @@ class StockPicking(models.Model):
                 print(f'Processing move for product: {product.display_name}')
 
                 taxes = move.sale_line_id.tax_id if move.sale_line_id else move.purchase_line_id.taxes_id
+                print('taxes', taxes)
                 product_price = product_template.standard_price  # default to standard price
                 supplier_info = self.env['product.supplierinfo'].search([('product_tmpl_id', '=', product_template.id)],
                                                                         limit=1)
@@ -45,7 +46,9 @@ class StockPicking(models.Model):
                 price = product_price
                 supply_amount = qty * price
 
-                tax_description = taxes[0].description if taxes else 'A'  # Default to 'A' if no taxes
+                # tax_description = taxes[0].description if taxes else 'A'
+                tax_description ='A'
+                print('description', tax_description)
                 tax_rate = taxes[0].amount / 100 if taxes else 0.16  # Default to 16% if no taxes
 
                 tax_amount = supply_amount * tax_rate
