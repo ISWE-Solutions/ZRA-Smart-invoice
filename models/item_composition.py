@@ -26,6 +26,7 @@ class MrpBom(models.Model):
 
     def _trigger_save_item_composition(self, bom):
         _logger.info("Triggering save item composition for BOM: %s", bom)
+        company = self.env.company
         if bom.product_id:
             # Fetch product template code
             product_template_code = bom.product_id.item_Cd
@@ -37,8 +38,8 @@ class MrpBom(models.Model):
             total_quantity = sum(line.product_qty for line in bom.bom_line_ids)
 
             payload = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "itemCd": product_template_code,
                 "cpstItemCd": pd_code,
                 "cpstQty": total_quantity,

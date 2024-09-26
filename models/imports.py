@@ -82,11 +82,12 @@ class ImportData(models.Model):
     def _fetch_import_items_data(self):
         global compute_fetch_selection_counter, fetch_import_data_counter
         global compute_fetch_selection_cache, compute_fetch_selection_last_request
-
-        api_url = "http://localhost:8085/imports/selectImportItems"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.import_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "lastReqDt": "20240105210300"
         }
 
@@ -561,11 +562,12 @@ class ImportData(models.Model):
             else:
                 item_cd = False
                 class_cd = False
-
-        api_url = "http://localhost:8085/imports/updateImportItems"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url =  config_settings.import_update_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "taskCd": self.task_cd,
             "dclDe": self.dcl_de.strftime('%Y%m%d'),
             "importItemList": [{
@@ -587,6 +589,7 @@ class ImportData(models.Model):
         print('Update saved successfully:', response.json())
 
     def update_import_items_full_confirmation(self):
+        company = self.env.company
         if not self.item_list:
             raise UserError(_('No items to import.'))
 
@@ -604,10 +607,11 @@ class ImportData(models.Model):
                 item_cd = False
                 class_cd = False
 
-        api_url = "http://localhost:8085/imports/updateImportItems"
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.import_update_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "taskCd": self.task_cd,
             "dclDe": self.dcl_de.strftime('%Y%m%d'),
             "importItemList": [{
@@ -629,6 +633,7 @@ class ImportData(models.Model):
         print('Update saved successfully:', response.json())
 
     def reject_import_items(self, item=None):
+        company = self.env.company
         if not self.item_list:
             raise UserError(_('No items to import.'))
 
@@ -645,10 +650,11 @@ class ImportData(models.Model):
                 item_cd = False
                 class_cd = False
 
-        api_url = "http://localhost:8085/imports/updateImportItems"
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.import_update_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "taskCd": self.task_cd,
             "dclDe": self.dcl_de.strftime('%Y%m%d'),
             "importItemList": [{
@@ -673,6 +679,7 @@ class ImportData(models.Model):
         print('Rejected saved successfully:', response.json())
 
     def reject_import_items_full_confirmation(self, item=None):
+        company = self.env.company
         if not self.item_list:
             raise UserError(_('No items to import.'))
 
@@ -689,10 +696,11 @@ class ImportData(models.Model):
                 item_cd = False
                 class_cd = False
 
-        api_url = "http://localhost:8085/imports/updateImportItems"
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.import_update_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "taskCd": self.task_cd,
             "dclDe": self.dcl_de.strftime('%Y%m%d'),
             "importItemList": [{
@@ -717,10 +725,12 @@ class ImportData(models.Model):
         print('Rejected saved successfully:', response.json())
 
     def save_stock_items(self, imp_qty):
-        api_url = "http://localhost:8085/stock/saveStockItems"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.stock_io_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
             "orgSarNo": 0,
             "regTyCd": "M",
@@ -753,10 +763,12 @@ class ImportData(models.Model):
         print('save stock saved successfully:', response.json())
 
     def save_stock_master(self, imp_qty):
-        api_url = "http://localhost:8085/stockMaster/saveStockMaster"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.stock_master_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "regrId": self.create_uid.id,
             "regrNm": self.create_uid.name,
             "modrNm": self.create_uid.name,
@@ -775,14 +787,16 @@ class ImportData(models.Model):
         print('save master saved successfully:', response.json())
 
     def save_stock_items_full_confirmed(self):
-        api_url = "http://localhost:8085/stock/saveStockItems"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.stock_io_endpoint
 
         # Fetch existing quantities
         product_quantities = self.fetch_existing_quantities()
 
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
             "orgSarNo": 0,
             "regTyCd": "M",
@@ -855,15 +869,17 @@ class ImportData(models.Model):
             raise UserError(_('Failed to save stock items data.'))
 
     def save_stock_master_full_confirmed(self):
-        api_url = "http://localhost:8085/stockMaster/saveStockMaster"
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.stock_master_endpoint
 
         # Fetch existing quantities
         product_quantities = self.fetch_existing_quantities()
+        company = self.env.company
 
         # Prepare the payload with updated quantities
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "regrId": self.create_uid.id,
             "regrNm": self.create_uid.name,
             "modrNm": self.create_uid.name,

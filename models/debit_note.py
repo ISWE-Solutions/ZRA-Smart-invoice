@@ -108,6 +108,7 @@ class AccountMove(models.Model):
                 }
 
     def create_debit_note_payload(self):
+        company = self.env.company
         current_user = self.env.user
         tpin = self.partner_id.tpin if self.partner_id else None
         rcpt_no = self.get_receipt_no(self)
@@ -127,8 +128,8 @@ class AccountMove(models.Model):
         exchange_rate = self.get_exchange_rate(credit_move.currency_id, self.env.company.currency_id)
 
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "orgSdcId": "SDC0010000647",
             "orgInvcNo": credit_move.rcpt_no,
             "cisInvcNo": 'D' + credit_move.name,
@@ -250,6 +251,7 @@ class AccountMove(models.Model):
         return self._post_to_debit_api(api_url, payload, "API Response Debit Note")
 
     def _process_moves_debit(self):
+        company = self.env.company
         current_user = self.env.user
         rcpt_no = self.get_receipt_no(self)
         reversal_reason = "01"
@@ -278,8 +280,8 @@ class AccountMove(models.Model):
             # print(f"API Response Credit Note resultMsg: {result_msg}")
 
             payload_new_endpoint = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "sarNo": 1,
                 "orgSarNo": 0,
                 "regTyCd": "M",
@@ -342,8 +344,8 @@ class AccountMove(models.Model):
                 remaining_qty = available_qty - (line.quantity)
 
             payload_stock = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "regrId": current_user.name,
                 "regrNm": current_user.id,
                 "modrNm": current_user.name,

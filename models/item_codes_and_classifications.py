@@ -19,10 +19,12 @@ class ZraItemData(models.Model):
 
     @api.model
     def fetch_and_store_classification_data(self):
-        url = 'http://localhost:8085/itemClass/selectItemsClass'
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        company = self.env.company
+        url = config_settings.classification_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "lastReqDt": "20240123121449"
         }
         headers = {
@@ -54,10 +56,12 @@ class CodeData(models.AbstractModel):
 
     @api.model
     def fetch_common_code_data(self):
-        url = 'http://localhost:8085/code/selectCodes'
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        company = self.env.company
+        url = config_settings.class_codes_endpoint
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "lastReqDt": "20180520000000"
         }
         headers = {

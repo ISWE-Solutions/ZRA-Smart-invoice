@@ -20,6 +20,7 @@ fetch_data_cache = None
 class PurchaseData(models.Model):
     _name = 'purchase.data'
     _description = 'Purchase Data'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
 
     spplr_tpin = fields.Char(string='Supplier TPIN')
     item_nms = fields.Char(string='item name ')
@@ -55,6 +56,124 @@ class PurchaseData(models.Model):
         required=False,
     )
 
+    fetch_selection_field_2 = fields.Many2one(
+        'fetched.data',  # Reference the fetched.data model
+        string='Select Fetched Data',
+        required=False,
+        domain=[],  # Add a domain if you want to filter the available records
+    )
+
+    def action_fetch_data(self):
+        self._fetch_data_from_endpoint()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Fetched Data',
+            'res_model': 'fetched.data',
+            'view_mode': 'tree,form',
+            'target': 'current',
+        }
+
+    # def _fetch_data_from_endpoint(self):
+    #     global fetch_counter, fetch_data_cache, fetch_options_last_request
+    #
+    #     # Unlink existing records in 'fetched.data'
+    #     self.env['fetched.data'].search([]).unlink()
+    #
+    #     # Check if the cache is valid
+    #     if fetch_data_cache is not None and fetch_options_last_request == "20240105210300":
+    #         return fetch_data_cache
+    #
+    #     fetch_counter += 1
+    #     url = "http://localhost:8085/trnsPurchase/selectTrnsPurchaseSales"
+    #     headers = {'Content-Type': 'application/json'}
+    #     payload = {
+    #         "tpin": company.tpin,
+    #         "bhfId": company.bhf_id,
+    #         "lastReqDt": "20240105210300"
+    #     }
+    #
+    #     try:
+    #         response = requests.post(url, data=json.dumps(payload), headers=headers)
+    #         response.raise_for_status()
+    #     except requests.exceptions.RequestException as e:
+    #         print('Error fetching data:', e)
+    #         return None
+    #
+    #     try:
+    #         result = response.json()
+    #         print("Fetched result:", result)  # Print the fetched result for debugging
+    #     except ValueError as e:
+    #         print('Error parsing JSON response:', e)
+    #         return None
+    #
+    #     if result.get('resultCd') == '000':
+    #         data = result['data']
+    #         print("Sale List:", data['saleList'])  # Print the sale list for debugging
+    #         self._store_fetched_data(data['saleList'])
+    #         return data
+    #     else:
+    #         print('Failed to fetch data:', result.get('resultMsg'))
+    #         return None
+
+    fetched_data_id = fields.Many2one('fetched.data', string='Fetched Data')
+
+    def _store_fetched_data(self, sale_list):
+        for sale in sale_list:
+            try:
+                # Parse the date formats as needed
+                sales_date = datetime.strptime(sale.get('salesDt'), '%Y%m%d').date() if sale.get('salesDt') else False
+                cfm_date = datetime.strptime(sale.get('cfmDt'), '%Y-%m-%d %H:%M:%S') if sale.get('cfmDt') else False
+                stock_rls_date = datetime.strptime(sale.get('stockRlsDt'), '%Y-%m-%d %H:%M:%S') if sale.get(
+                    'stockRlsDt') else False
+
+                # Create or update fetched.data record
+                fetched_record = self.env['fetched.data'].create({
+                    'spplr_tpin': sale.get('spplrTpin'),
+                    'spplr_nm': sale.get('spplrNm'),
+                    'spplr_bhf_id': sale.get('spplrBhfId'),
+                    'spplr_invc_no': sale.get('spplrInvcNo'),
+                    'rcpt_ty_cd': sale.get('rcptTyCd'),
+                    'pmt_ty_cd': sale.get('pmtTyCd'),
+                    'cfm_dt': cfm_date,  # Use the parsed date
+                    'sales_dt': sales_date,  # Use the parsed date
+                    'stock_rls_dt': stock_rls_date,  # Use the parsed date
+                    'tot_item_cnt': sale.get('totItemCnt'),
+                    'tot_taxbl_amt': sale.get('totTaxblAmt'),
+                    'tot_tax_amt': sale.get('totTaxAmt'),
+                    'tot_amt': sale.get('totAmt'),
+                    'remark': sale.get('remark'),
+                })
+
+                print("Created fetched.data record:", fetched_record.read())
+
+                # Create or update purchase.item records
+                for item in sale.get('itemList', []):
+                    item_record = self.env['purchase.item'].create({
+                        'purchase_fetch_id': fetched_record.id,
+                        'item_seq': item.get('itemSeq'),
+                        'item_cd': item.get('itemCd'),
+                        'item_nm': item.get('itemNm'),
+                        'qty': item.get('qty'),
+                        'prc': item.get('prc'),
+                        'sply_amt': item.get('splyAmt'),
+                        'dc_rt': item.get('dcRt'),
+                        'dc_amt': item.get('dcAmt'),
+                        'vat_cat_cd': item.get('vatCatCd'),
+                        'vat_taxbl_amt': item.get('vatTaxblAmt'),
+                        'taxbl_amt': item.get('taxblAmt'),
+                        'vat_amt': item.get('vatAmt'),
+                        'tot_amt': item.get('totAmt'),
+                        'qty_unit_cd': item.get('qtyUnitCd'),
+                        'item_cls_cd': item.get('itemClsCd'),
+                        'pkg_unit_cd': item.get('pkgUnitCd'),
+                    })
+
+                    print("Created purchase.item record:", item_record.read())
+
+            except Exception as e:
+                print("Error processing sale:", sale)
+                print("Exception:", e)
+
     def log_endpoint_hits(self):
         print('Fetch Options Endpoint Hit Count: %d', fetch_options_counter)
         print('Fetch Purchase Data Endpoint Hit Count: %d', fetch_purchase_data_counter)
@@ -69,11 +188,13 @@ class PurchaseData(models.Model):
         fetch_counter += 1
         print('Fetch Endpoint Hit Count:', fetch_counter)
 
-        url = "http://localhost:8085/trnsPurchase/selectTrnsPurchaseSales"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        url = config_settings.purchase_si_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "lastReqDt": "20240105210300"
         }
 
@@ -118,6 +239,85 @@ class PurchaseData(models.Model):
             fetch_options_last_request = "20240105210300"
 
         return fetch_options_cache
+
+    # def fetch_purchase_data(self, *args, **kwargs):
+    #     _logger.info(f"Fetching data for purchase record with ID: {self.id}")
+    #     _logger.info(f"Selected Fetched Data ID: {self.fetch_selection_field_2.id}")
+    #
+    #     if len(self) > 1:
+    #         raise ValueError("This operation can only be performed on one record at a time.")
+    #
+    #     if not self.fetch_selection_field_2:
+    #         _logger.warning("No data selected to fetch.")
+    #         return {
+    #             'type': 'ir.actions.client',
+    #             'tag': 'display_notification',
+    #             'params': {
+    #                 'title': 'Error',
+    #                 'message': 'Please select data to fetch.',
+    #                 'type': 'danger',
+    #             }
+    #         }
+    #
+    #     fetched_data = self.fetch_selection_field_2
+    #
+    #     # Log the entire fetched_data structure
+    #     _logger.info(f"Fetched Data: {fetched_data.read()}")
+    #
+    #     # Concatenate the item names
+    #     item_names = ', '.join([item.item_nm for item in fetched_data.item_list])
+    #
+    #     purchase_data_vals = {
+    #         'spplr_nm': fetched_data.spplr_nm,
+    #         'spplr_tpin': fetched_data.spplr_tpin,
+    #         'spplr_invc_no': fetched_data.spplr_invc_no,
+    #         'tot_amt': fetched_data.tot_amt,
+    #         'spplr_bhf_id': fetched_data.spplr_bhf_id,
+    #         'rcpt_ty_cd': fetched_data.rcpt_ty_cd,
+    #         'pmt_ty_cd': fetched_data.pmt_ty_cd,
+    #         'tot_tax_amt': fetched_data.tot_tax_amt,
+    #         'remark': fetched_data.remark,
+    #         'cfm_dt': fetched_data.cfm_dt,
+    #         'sales_dt': fetched_data.sales_dt,
+    #         'stock_rls_dt': fetched_data.stock_rls_dt,
+    #         'item_nm': item_names,  # Store concatenated item names
+    #     }
+    #
+    #     purchase_data_record = self.env['purchase.data'].create(purchase_data_vals)
+    #     _logger.info(f"Created Purchase Data ID: {purchase_data_record.id}")
+    #
+    #     for item in fetched_data.item_list:
+    #         self.env['purchase.item'].create({
+    #             'purchase_id': purchase_data_record.id,
+    #             'purchase_fetch_id': fetched_data.id,
+    #             'item_seq': item.item_seq,
+    #             'item_cd': item.item_cd,
+    #             'item_nm': item.item_nm,
+    #             'qty': item.qty,
+    #             'fetched': item.qty,
+    #             'prc': item.prc,
+    #             'sply_amt': item.sply_amt,
+    #             'dc_rt': item.dc_rt,
+    #             'dc_amt': item.dc_amt,
+    #             'vat_taxbl_amt': item.vat_taxbl_amt,
+    #             'taxbl_amt': item.taxbl_amt,
+    #             'vat_amt': item.vat_amt,
+    #             'tot_amt': item.tot_amt,
+    #             'vat_cat_cd': item.vat_cat_cd,
+    #             'qty_unit_cd': item.qty_unit_cd,
+    #             'item_cls_cd': item.item_cls_cd,
+    #             'pkg_unit_cd': item.pkg_unit_cd,
+    #         })
+    #
+    #     _logger.info(f"Purchase items created for purchase data ID: {purchase_data_record.id}")
+    #
+    #     return {
+    #         'type': 'ir.actions.act_window',
+    #         'res_model': 'purchase.data',
+    #         'view_mode': 'tree,form',
+    #         'target': 'current',
+    #         'context': {'search_default_filter': True},
+    #     }
 
     def fetch_purchase_data(self):
         selected_option = self.fetch_selection
@@ -431,7 +631,6 @@ class PurchaseData(models.Model):
             'context': self.env.context,
         }
 
-
     def create_or_update_products(self):
         product_template_model = self.env['product.template']
         product_product_model = self.env['product.product']
@@ -499,6 +698,7 @@ class PurchaseData(models.Model):
         _logger.info('Invoice confirmed for supplier invoice no: %s', self.spplr_invc_no)
 
     def _reject_purchase(self, item=None):
+        company = self.env.company
         if not self.item_list:
             raise UserError(_('No items to confirm.'))
 
@@ -506,11 +706,12 @@ class PurchaseData(models.Model):
         fetched_qty = sum(item.fetched for item in self.item_list)
         rejected_qty = fetched_qty - confirmed_qty
 
-        url = "http://localhost:8085/trnsPurchase/savePurchase"
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        url = config_settings.purchase_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "invcNo": self.spplr_invc_no,
             "orgInvcNo": 0,
             "spplrTpin": self.spplr_tpin,
@@ -582,12 +783,13 @@ class PurchaseData(models.Model):
             raise UserError(_('No items to confirm.'))
 
         confirmed_qty = sum(item.qty for item in self.item_list)
-
-        url = "http://localhost:8085/trnsPurchase/savePurchase"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        url = config_settings.purchase_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "invcNo": self.spplr_invc_no,
             "orgInvcNo": 0,
             "spplrTpin": self.spplr_tpin,
@@ -655,11 +857,13 @@ class PurchaseData(models.Model):
             raise UserError(_('Error Check Network/internet Connectivity.'))
 
     def _save_item(self, stock_items):
-        url = "http://localhost:8085/stock/saveStockItems"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        url = config_settings.stock_io_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
             "orgSarNo": 0,
             "regTyCd": "M",
@@ -690,9 +894,10 @@ class PurchaseData(models.Model):
             raise UserError(_('Failed to save stock items.'))
 
     def _save_stock_master(self, stock_items):
+        company = self.env.company
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "regrId": self.create_uid.id,
             "regrNm": self.create_uid.name,
             "modrNm": self.create_uid.name,
@@ -701,8 +906,10 @@ class PurchaseData(models.Model):
         }
         print("Stock master Payload being sent:", json.dumps(payload, indent=4))
         print(payload)
+
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
         try:
-            response = requests.post("http://localhost:8085/stockMaster/saveStockMaster", data=json.dumps(payload),
+            response = requests.post(config_settings.stock_master_endpoint, data=json.dumps(payload),
                                      headers={'Content-Type': 'application/json'})
             response.raise_for_status()
             print('Stock master saved successfully:', response.json())
@@ -711,11 +918,13 @@ class PurchaseData(models.Model):
             raise UserError(_('Failed to save stock master data.'))
 
     def _save_item_full_confirmed(self):
-        url = "http://localhost:8085/stock/saveStockItems"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        url = config_settings.stock_io_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
             "orgSarNo": 0,
             "regTyCd": "M",
@@ -771,15 +980,17 @@ class PurchaseData(models.Model):
             raise UserError(_('Failed to save stock items.'))
 
     def _save_stock_master_full_confirmed(self):
-        url = "http://localhost:8085/stockMaster/saveStockMaster"
+        company = self.env.company
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        url = config_settings.stock_master_endpoint
         headers = {'Content-Type': 'application/json'}
 
         total_quantities = self.get_total_quantities()
         product_quantities = self.fetch_existing_quantities()
 
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "regrId": self.create_uid.id,
             "regrNm": self.create_uid.name,
             "modrNm": self.create_uid.name,
@@ -822,13 +1033,13 @@ class PurchaseItem(models.Model):
     _description = 'Purchase Item'
 
     purchase_id = fields.Many2one('purchase.data', string='Purchase')
+    purchase_fetch_id = fields.Many2one('fetched.data', string='Fetched Data', required=True, ondelete='cascade')
     item_seq = fields.Integer(string='Item Sequence')
     item_cd = fields.Char(string='Item Code')
     item_nm = fields.Char(string='Item Name')
     qty = fields.Float(string='Accepted Quantity')
     fetched = fields.Integer(string='Received Quantity')
     prc = fields.Float(string='Price')
-    sply_amt = fields.Float(string='Supply Amount')
     dc_rt = fields.Float(string='Discount Rate')
     dc_amt = fields.Float(string='Discount Amount')
     vat_cat_cd = fields.Char(string='VAT Category Code')
@@ -907,6 +1118,60 @@ class PurchaseItem(models.Model):
             'type': 'ir.actions.client',
             'tag': 'reload',
         }
+
+
+class FetchedData(models.Model):
+    _name = 'fetched.data'
+    _description = 'Fetched Data'
+
+    spplr_tpin = fields.Char(string='Supplier TPIN')
+    spplr_nm = fields.Char(string='Supplier Name')
+    spplr_bhf_id = fields.Char(string='Supplier BHF ID')
+    spplr_invc_no = fields.Integer(string='Invoice No')
+    rcpt_ty_cd = fields.Char(string='Receipt Type Code')
+    pmt_ty_cd = fields.Char(string='Payment Type Code')
+    cfm_dt = fields.Datetime(string='Confirmation Date')
+    sales_dt = fields.Date(string='Sales Date')
+    stock_rls_dt = fields.Datetime(string='Stock Release Date')
+    tot_item_cnt = fields.Integer(string='Total Item Count')
+    tot_taxbl_amt = fields.Float(string='Total Taxable Amount')
+    tot_tax_amt = fields.Float(string='Total Tax Amount')
+    tot_amt = fields.Float(string='Total Amount')
+    remark = fields.Text(string='Remark')
+    _rec_name = 'display_name'
+    purchase_id = fields.Many2one('purchase.data', string='Purchase', ondelete='cascade')
+
+    def unlink(self):
+        purchase_items = self.env['purchase.item'].search([('purchase_fetch_id', 'in', self.ids)])
+        if purchase_items:
+            purchase_items.unlink()  # Delete related purchase items
+        return super(FetchedData, self).unlink()
+
+    display_name = fields.Char(
+        string='Display Name',
+        compute='_compute_display_name',
+        store=True
+    )
+
+    @api.depends('spplr_nm', 'spplr_tpin', 'spplr_invc_no')
+    def _compute_display_name(self):
+        for record in self:
+            name = f"{record.spplr_nm or ''} - {record.spplr_tpin or ''} - Invoice: {record.spplr_invc_no or ''}"
+            record.display_name = name
+
+    item_list = fields.One2many('purchase.item', 'purchase_fetch_id', string='Item List')
+
+
+class FetchedDataItem(models.Model):
+    _name = 'fetched.data.item'
+    _description = 'Fetched Data Items'
+
+    item_cd = fields.Char('Item Code')
+    item_nm = fields.Char('Item Name')
+    quantity = fields.Float('Quantity')
+    price = fields.Float('Price')
+    total_amount = fields.Float('Total Amount')
+    fetched_data_id = fields.Many2one('fetched.data', string='Fetched Data Reference')
 
 
 class ProductProduct(models.Model):

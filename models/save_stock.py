@@ -9,9 +9,10 @@ class AccountMoveReversal(models.TransientModel):
     _inherit = 'account.move.reversal'
 
     def create_credit_note_payload(self):
+        company = self.env.company
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "orgInvcNo": 78687,
             "cisInvcNo": "SAP000019",
             "custTin": "0782229123",
@@ -143,10 +144,11 @@ class AccountMoveReversal(models.TransientModel):
             result_msg = self.create_credit_note_api_call()
             move.message_post(body=f"API Response Credit Note resultMsg: {result_msg}")
             # print(f"API Response Credit Note resultMsg: {result_msg}")
+            company = self.env.company
 
             payload_new_endpoint = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "sarNo": 1,
                 "orgSarNo": 0,
                 "regTyCd": "M",
@@ -224,8 +226,8 @@ class AccountMoveReversal(models.TransientModel):
             # print(f"Save Stock Item API Response: {result_msg_new_endpoint}")
 
             payload_stock = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "regrId": "Admin",
                 "regrNm": "Admin",
                 "modrNm": "Admin",
