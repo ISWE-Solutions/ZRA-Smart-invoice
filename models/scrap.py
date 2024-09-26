@@ -4,10 +4,12 @@ import json
 from odoo.exceptions import UserError
 from datetime import datetime
 
+
 class StockScrap(models.Model):
     _inherit = 'stock.scrap'
 
     def action_validate(self):
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
         for record in self:
             print("Function action_validate invoked")
             res = super(StockScrap, record).action_validate()
@@ -36,9 +38,10 @@ class StockScrap(models.Model):
                 vatAmt = vat_tax.amount / 100 * product.lst_price
 
             # Prepare the data for the first endpoint
+            company = self.env.company
             save_stock_items_payload = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "sarNo": 1,
                 "orgSarNo": 0,
                 "regTyCd": "M",
@@ -89,7 +92,7 @@ class StockScrap(models.Model):
             print("Payload for saveStockMaster:", json.dumps(save_stock_items_payload, indent=4))
             # Send the request to the first endpoint
             headers = {'Content-Type': 'application/json'}
-            response = requests.post('http://localhost:8085/stock/saveStockItems',
+            response = requests.post(config_settings.stock_io_endpoint,
                                      data=json.dumps(save_stock_items_payload),
                                      headers=headers)
             print(f"First endpoint response status: {response.status_code}")
@@ -100,8 +103,8 @@ class StockScrap(models.Model):
 
             # Prepare the data for the second endpoint
             save_stock_master_payload = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "regrId": self.env.user.id,  # Use current user id
                 "regrNm": self.env.user.name,  # Use current user name
                 "modrNm": self.env.user.name,  # Use current user name
@@ -116,7 +119,7 @@ class StockScrap(models.Model):
             save_stock_master_payload['stockItemList'].append(item)
             print("Payload for saveStockMaster:", json.dumps(save_stock_master_payload, indent=4))
             # Send the request to the second endpoint
-            response = requests.post('http://localhost:8085/stockMaster/saveStockMaster',
+            response = requests.post(config_settings.stock_master_endpoint,
                                      data=json.dumps(save_stock_master_payload),
                                      headers=headers)
             print(f"Second endpoint response status: {response.status_code}")

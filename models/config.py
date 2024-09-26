@@ -9,6 +9,106 @@ class ResConfigSettings(models.TransientModel):
 
     fetch_data_button = fields.Boolean(string="Fetch Data")
 
+    classification_endpoint = fields.Char(string='classification  ZRA Endpoint',
+                                          default="http://localhost:8085/itemClass/selectItemsClass")
+    class_codes_endpoint = fields.Char(string='class codes ZRA Endpoint',
+                                       default="http://localhost:8085/code/selectCodes")
+    sales_endpoint = fields.Char(string='Sales ZRA Endpoint', default="http://localhost:8085/trnsSales/saveSales")
+    purchase_endpoint = fields.Char(string='Purchase ZRA Endpoint',
+                                    default="http://localhost:8085/trnsPurchase/savePurchase")
+    purchase_si_endpoint = fields.Char(string='Purchase SI ZRA Endpoint',
+                                       default="http://localhost:8085/trnsPurchase/selectTrnsPurchaseSales")
+    inventory_endpoint = fields.Char(string='Inventory ZRA Endpoint', default="http://localhost:8085/items/saveItem")
+    import_endpoint = fields.Char(string='Import ZRA Endpoint',
+                                  default="http://localhost:8085/imports/selectImportItems")
+    stock_io_endpoint = fields.Char(string='Stock I/O ZRA Endpoint',
+                                    default="http://localhost:8085/stock/saveStockItems")
+    stock_master_endpoint = fields.Char(string='Stock Master ZRA Endpoint',
+                                        default="http://localhost:8085/stockMaster/saveStockMaster")
+
+    # Newly added fields
+    import_update_endpoint = fields.Char(string='Import Update ZRA Endpoint',
+                                         default="http://localhost:8085/imports/updateImportItems")
+    inventory_update_endpoint = fields.Char(string='Inventory Update ZRA Endpoint',
+                                            default="http://localhost:8085/items/updateItem")
+
+    def set_values(self):
+        super(ResConfigSettings, self).set_values()
+        params = self.env['ir.config_parameter'].sudo()
+
+        params.set_param('res.config.settings.classification_endpoint', self.classification_endpoint)
+        params.set_param('res.config.settings.class_codes_endpoint', self.class_codes_endpoint)
+        params.set_param('res.config.settings.sales_endpoint', self.sales_endpoint)
+        params.set_param('res.config.settings.purchase_endpoint', self.purchase_endpoint)
+        params.set_param('res.config.settings.purchase_si_endpoint', self.purchase_si_endpoint)
+        params.set_param('res.config.settings.inventory_endpoint', self.inventory_endpoint)
+        params.set_param('res.config.settings.import_endpoint', self.import_endpoint)
+        params.set_param('res.config.settings.stock_io_endpoint', self.stock_io_endpoint)
+        params.set_param('res.config.settings.stock_master_endpoint', self.stock_master_endpoint)
+        params.set_param('res.config.settings.import_update_endpoint', self.import_update_endpoint)
+        params.set_param('res.config.settings.inventory_update_endpoint', self.inventory_update_endpoint)
+
+    @api.model
+    def get_values(self):
+        res = super(ResConfigSettings, self).get_values()
+        params = self.env['ir.config_parameter'].sudo()
+
+        res.update(
+            classification_endpoint=params.get_param('res.config.settings.classification_endpoint',
+                                                     default="http://localhost:8085/itemClass/selectItemsClass"),
+            class_codes_endpoint=params.get_param('res.config.settings.class_codes_endpoint',
+                                                  default="http://localhost:8085/code/selectCodes"),
+            sales_endpoint=params.get_param('res.config.settings.sales_endpoint',
+                                            default="http://localhost:8085/trnsSales/saveSales"),
+            purchase_endpoint=params.get_param('res.config.settings.purchase_endpoint',
+                                               default="http://localhost:8085/trnsPurchase/savePurchase"),
+            purchase_si_endpoint=params.get_param('res.config.settings.purchase_si_endpoint',
+                                                  default="http://localhost:8085/trnsPurchase/selectTrnsPurchaseSales"),
+            inventory_endpoint=params.get_param('res.config.settings.inventory_endpoint',
+                                                default="http://localhost:8085/items/saveItem"),
+            import_endpoint=params.get_param('res.config.settings.import_endpoint',
+                                             default="http://localhost:8085/imports/selectImportItems"),
+            stock_io_endpoint=params.get_param('res.config.settings.stock_io_endpoint',
+                                               default="http://localhost:8085/stock/saveStockItems"),
+            stock_master_endpoint=params.get_param('res.config.settings.stock_master_endpoint',
+                                                   default="http://localhost:8085/stockMaster/saveStockMaster"),
+            import_update_endpoint=params.get_param('res.config.settings.import_update_endpoint',
+                                                    default="http://localhost:8085/imports/updateImportItems"),
+            inventory_update_endpoint=params.get_param('res.config.settings.inventory_update_endpoint',
+                                                       default="http://localhost:8085/items/updateItem"),
+        )
+        return res
+
+    # Existing fields with default URLs
+    # classification_endpoint = fields.Char(string='classification  ZRA Endpoint')
+    # class_codes_endpoint = fields.Char(string='class codes ZRA Endpoint')
+    # sales_endpoint = fields.Char(string='Sales ZRA Endpoint')
+    # purchase_endpoint = fields.Char(string='Purchase ZRA Endpoint')
+    # purchase_si_endpoint = fields.Char(string='Purchase SI ZRA Endpoint')
+    # inventory_endpoint = fields.Char(string='Inventory ZRA Endpoint')
+    # import_endpoint = fields.Char(string='Import ZRA Endpoint')
+    # stock_io_endpoint = fields.Char(string='Stock I/O ZRA Endpoint')
+    # stock_master_endpoint = fields.Char(string='Stock Master ZRA Endpoint')
+    #
+    # # Newly added fields
+    # import_update_endpoint = fields.Char(string='Import Update ZRA Endpoint')
+    # inventory_update_endpoint = fields.Char(string='Inventory Update ZRA Endpoint')
+
+    @api.model
+    def create(self, vals):
+        # Delete any existing rows
+        self.sudo().search([]).unlink()
+        # Create the new record
+        return super(ResConfigSettings, self).create(vals)
+
+    def write(self, vals):
+        # Delete any existing rows before writing new data
+        self.sudo().search([]).unlink()
+        # Write the new record
+        return super(ResConfigSettings, self).write(vals)
+
+
+
     endpoint_hit_counts = {
         'endpoint_1': 0,
         'endpoint_2': 0
@@ -35,6 +135,3 @@ class ResConfigSettings(models.TransientModel):
                 'sticky': False,
             }
         }
-
-
-

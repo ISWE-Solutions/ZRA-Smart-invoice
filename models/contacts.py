@@ -7,6 +7,8 @@ class ResPartner(models.Model):
     tpin = fields.Char(string='TPIN')
     lpo = fields.Char(string='LPO')
     tax_id = fields.Many2one('account.tax', string='Tax')
+    bhfId = fields.Char(string='Branch ID')
+    orgSdcId = fields.Char(string='Original SdcID')
 
     vat = fields.Char(string='VAT')  # Assuming you have a vat field in res.partner
 

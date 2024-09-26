@@ -10,7 +10,7 @@ class StockChangeProductQty(models.TransientModel):
     _inherit = 'stock.change.product.qty'
 
     def change_product_qty(self):
-
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
         current_user = self.env.user
         _logger.info('Entering change_product_qty method.')
         print('Entering change_product_qty method.')
@@ -26,9 +26,10 @@ class StockChangeProductQty(models.TransientModel):
             print(f'Changing quantity for product: {product.display_name} to {new_qty}')
 
             # Prepare the payload for the POST request
+            company = self.env.company
             payload = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "regrId": current_user.id,
                 "regrNm": current_user.name,
                 "modrNm": current_user.name,
@@ -44,7 +45,7 @@ class StockChangeProductQty(models.TransientModel):
             try:
                 print('Payload being sent:', json.dumps(payload, indent=4))
                 # Make the POST request to the given endpoint
-                response = requests.post('http://localhost:8085/stockMaster/saveStockMaster', json=payload)
+                response = requests.post(config_settings.stock_master_endpoint, json=payload)
                 response.raise_for_status()
                 result_msg = response.json().get('resultMsg', 'No result message received')
                 _logger.info(f'Endpoint response: {result_msg}')
@@ -91,7 +92,7 @@ class StockPickingReturn(models.TransientModel):
         return result
 
     def _process_return_moves(self):
-
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
         tpin, lpo, export_country_code = self.get_sales_order_fields()
         current_user = self.env.user
 
@@ -113,9 +114,10 @@ class StockPickingReturn(models.TransientModel):
                     print(f'Processing return move for product: {product.display_name}')
 
                     # Prepare payloads for the POST requests
+                    company = self.env.company
                     payload_stock_items = {
-                        "tpin": "1018798746",
-                        "bhfId": "000",
+                        "tpin": company.tpin,
+                        "bhfId": company.bhf_id,
                         "sarNo": 1,
                         "orgSarNo": 0,
                         "regTyCd": "M",
@@ -175,8 +177,8 @@ class StockPickingReturn(models.TransientModel):
                         remaining_qty = available_qty + line.quantity
 
                     payload_stock_master = {
-                        "tpin": "1018798746",
-                        "bhfId": "000",
+                        "tpin": company.tpin,
+                        "bhfId": company.bhf_id,
                         "regrId": current_user.id,
                         "regrNm": current_user.name,
                         "modrNm": current_user.name,
@@ -192,9 +194,9 @@ class StockPickingReturn(models.TransientModel):
                     _logger.info(f'Payload for stockMaster/saveStockMaster: {payload_stock_master}')
                     print(f'Payload for stockMaster/saveStockMaster: {payload_stock_items}')
 
-                    result_msg_stock_items = self._post_to_api('http://localhost:8085/stock/saveStockItems',
+                    result_msg_stock_items = self._post_to_api(config_settings.stock_master_endpoint,
                                                                payload_stock_items, "Stock items update")
-                    result_msg_stock_master = self._post_to_api('http://localhost:8085/stockMaster/saveStockMaster',
+                    result_msg_stock_master = self._post_to_api(config_settings.stock_master_endpoint,
                                                                 payload_stock_master, "Stock master update")
 
                     # Post the resultMsg to the chatter

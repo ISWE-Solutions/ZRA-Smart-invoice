@@ -104,6 +104,7 @@ class AccountMoveReversal(models.TransientModel):
         return tax_inclusive_price
 
     def create_credit_note_payload(self):
+        company = self.env.company
         current_user = self.env.user
         # tpin = self.partner_id.tpin if self.partner_id else None
         rcpt_no = self.get_receipt_no(self)
@@ -128,8 +129,8 @@ class AccountMoveReversal(models.TransientModel):
             _logger.info(f"Partner ID: {move.partner_id.id if move.partner_id else 'None'}, TPIN: {tpin}")
 
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "orgSdcId": "SDC0010000647",
             "orgInvcNo": credit_move.rcpt_no,
             "cisInvcNo": credit_move.name + '00',
@@ -246,7 +247,8 @@ class AccountMoveReversal(models.TransientModel):
         return payload
 
     def create_credit_note_api_call(self):
-        api_url = "http://localhost:8085/trnsSales/saveSales"
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        api_url = config_settings.sales_endpoint
         payload = self.create_credit_note_payload()
         return self._post_to_api(api_url, payload, "API Response Credit Note")
 
@@ -256,12 +258,14 @@ class AccountMoveReversal(models.TransientModel):
         return res
 
     def _process_moves(self):
+        company = self.env.company
         current_user = self.env.user
         rcpt_no = self.get_receipt_no(self)
         reversal_reason = "01"
 
         credit_move = self.env['account.move'].browse(self._context.get('active_id'))
         partner = credit_move.partner_id
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
 
         # Print fetched reversal reason for debugging
         print(f'Fetched Reversal Reason: {reversal_reason}')
@@ -283,8 +287,8 @@ class AccountMoveReversal(models.TransientModel):
             # print(f"API Response Credit Note resultMsg: {result_msg}")
 
             payload_new_endpoint = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "sarNo": 1,
                 "orgSarNo": 0,
                 "regTyCd": "M",
@@ -331,7 +335,7 @@ class AccountMoveReversal(models.TransientModel):
                     } for index, line in enumerate(credit_move.invoice_line_ids)
                 ]
             }
-            result_msg_new_endpoint = self._post_to_api('http://localhost:8085/stock/saveStockItems',
+            result_msg_new_endpoint = self._post_to_api(config_settings.stock_io_endpoint,
                                                         payload_new_endpoint, "Save Stock Item API Response")
             move.message_post(body=f"API Response New Endpoint: {result_msg_new_endpoint}")
             # print(f"Save Stock Item API Response: {result_msg_new_endpoint}")
@@ -347,8 +351,8 @@ class AccountMoveReversal(models.TransientModel):
                 remaining_qty = available_qty + line.quantity
 
             payload_stock = {
-                "tpin": "1018798746",
-                "bhfId": "000",
+                "tpin": company.tpin,
+                "bhfId": company.bhf_id,
                 "regrId": current_user.name,
                 "regrNm": current_user.id,
                 "modrNm": current_user.name,
@@ -360,7 +364,7 @@ class AccountMoveReversal(models.TransientModel):
                     } for line in credit_move.invoice_line_ids
                 ]
             }
-            result_msg_stock = self._post_to_api('http://localhost:8085/stockMaster/saveStockMaster', payload_stock,
+            result_msg_stock = self._post_to_api(config_settings.stock_master_endpoint, payload_stock,
                                                  "Save Stock Master Endpoint response:")
             move.message_post(body=f"Endpoint response: {result_msg_stock}")
             # print(f"Save Stock Master Endpoint response: {result_msg_stock}")

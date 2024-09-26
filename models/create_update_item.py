@@ -5,6 +5,9 @@ import requests
 
 _logger = logging.getLogger(__name__)
 
+VALID_TAX_DESCRIPTIONS = ['A', 'B', 'C1', 'C2', 'C3', 'D', 'RVAT', 'E', 'TOT']
+
+
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
@@ -39,6 +42,8 @@ class ProductTemplate(models.Model):
         string='Product Type',
     )
 
+
+
     @api.depends('detailed_type')
     def _compute_type(self):
         type_mapping = {
@@ -57,6 +62,23 @@ class ProductTemplate(models.Model):
 
     def get_tax_description(self, tax):
         return tax.description if tax else ''
+
+    @api.onchange('taxes_id')
+    def _onchange_taxes_id(self):
+        self.validate_taxes()
+        self.validate_single_tax()
+
+    def validate_taxes(self):
+        """Validate that the selected taxes have a valid description."""
+        for tax in self.taxes_id:
+            if tax.description not in VALID_TAX_DESCRIPTIONS:
+                raise ValidationError(
+                    _('The selected tax "%s" tax is not valid. Please select a valid tax.') % tax.description)
+
+    def validate_single_tax(self):
+        """Ensure that only one tax is selected."""
+        if len(self.taxes_id) > 1:
+            raise ValidationError(_('You can only add one tax to a product. Please remove the extra taxes.'))
 
     @api.model
     def _fields_view_get(self, view_id=None, view_type='form', toolbar=False, submenu=False):
@@ -140,6 +162,8 @@ class ProductTemplate(models.Model):
             vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
 
         record = super(ProductTemplate, self.with_context(is_create=True)).create(vals)
+        record.validate_single_tax()
+        record.validate_taxes()
         record._handle_post_item_data(vals, is_create=True)
         _logger.info("Product created with ID: %s", record.id)
         return record
@@ -171,28 +195,33 @@ class ProductTemplate(models.Model):
     #         vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
     #
     #     result = super(ProductTemplate, self).write(vals)
+    #     self.validate_single_tax()
+    #     self.validate_taxes()
     #     self._handle_post_item_data(vals, is_create=False)
     #     _logger.info("Product updated with ID: %s", self.id)
     #     return result
 
     def _handle_post_item_data(self, vals, is_create):
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+
         if is_create:
-            url = 'http://localhost:8085/items/saveItem'
+            url = config_settings.inventory_endpoint
             success_message = "API Response Item registered"
         else:
-            url = 'http://localhost:8085/items/updateItem'
+            url = config_settings.inventory_update_endpoint
             success_message = "API Response Item updated"
 
         self._post_item_data(vals, url, success_message)
 
     def _post_item_data(self, vals, url, success_message):
+        company = self.env.company
         current_user = self.env.user
         if not self.item_Cd:
             self.item_Cd = self.generate_item_code(self.cd, '2', self.packaging_unit_cd, self.quantity_unit_cd)
 
         payload = {
-            "tpin": "1018798746",
-            "bhfId": "000",
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
             "itemCd": self.item_Cd,
             "itemClsCd": self.item_cls_cd,
             "itemTyCd": "2",
@@ -222,6 +251,7 @@ class ProductTemplate(models.Model):
                 "tlCatCd": "TL",
                 "exciseTxCatCd": "EXEEG"
             })
+        print(payload)
 
         try:
             response = requests.post(url, json=payload, headers=headers)
@@ -249,6 +279,7 @@ class ProductTemplate(models.Model):
                 'sticky': False
             }
         }
+
 
 class ItemCodeSequence(models.Model):
     _name = 'item.code.sequence'

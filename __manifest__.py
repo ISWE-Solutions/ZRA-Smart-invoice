@@ -29,6 +29,7 @@ Intergration with Zra smart invoice system
         'views/templates.xml',
         'views/product_template_views.xml',
         'views/contacts.xml',
+        'views/company.xml',
         'views/sales.xml',
         'wizards/account_debit_note_wizard.xml',
         'views/fetch_data_view.xml',
@@ -47,5 +48,5 @@ Intergration with Zra smart invoice system
     'images': ['static/description/icon.png'],
     'installable': True,
     'application': True,
-    'auto_install': False,
+    'auto_install': True,
 }

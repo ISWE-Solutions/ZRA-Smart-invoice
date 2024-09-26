@@ -16,6 +16,8 @@ class StockPicking(models.Model):
 
         res = super(StockPicking, self).button_validate()
 
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+
         for picking in self:
             print(f'Processing picking with type: {picking.picking_type_id.code}')
 
@@ -102,10 +104,12 @@ class StockPicking(models.Model):
                 elif picking.picking_type_id.code == 'outgoing':
                     updated_stock_qty = stock_quant.quantity
 
+            company = self.env.company
+
             if picking.picking_type_id.code == 'incoming':
                 payload_purchase = {
-                    "tpin": "1018798746",
-                    "bhfId": "000",
+                    "tpin": company.tpin,
+                    "bhfId": company.bhf_id,
                     "invcNo": re.search(r'\d+', picking.name).group(),
                     "orgInvcNo": 0,
                     "spplrTpin": picking.partner_id.tpin or None,
@@ -138,7 +142,7 @@ class StockPicking(models.Model):
                 print('Payload being sent:', json.dumps(payload_purchase, indent=4))
 
                 try:
-                    response = requests.post("http://localhost:8085/trnsPurchase/savePurchase", json=payload_purchase)
+                    response = requests.post(config_settings.purchase_endpoint, json=payload_purchase)
                     response.raise_for_status()
                     result_msg_purchase = response.json().get('resultMsg', 'No result message returned')
 
@@ -155,8 +159,8 @@ class StockPicking(models.Model):
                     print(f'API request failed: {e}')
 
                 payload_stock_master = {
-                    "tpin": "1018798746",
-                    "bhfId": "000",
+                    "tpin": company.tpin,
+                    "bhfId": company.bhf_id,
                     "regrId": picking.create_uid.name or "Admin",
                     "regrNm": picking.create_uid.name or "Admin",
                     "modrNm": picking.write_uid.name or "Admin",
@@ -172,7 +176,7 @@ class StockPicking(models.Model):
                 print('Payload being sent:', json.dumps(payload_stock_master, indent=4))
 
                 try:
-                    response = requests.post("http://localhost:8085/stockMaster/saveStockMaster",
+                    response = requests.post(config_settings.stock_master_endpoint,
                                              json=payload_stock_master)
                     response.raise_for_status()
                     result_msg_stock_master = response.json().get('resultMsg', 'No result message returned')
@@ -190,8 +194,8 @@ class StockPicking(models.Model):
 
             # elif picking.picking_type_id.code == 'outgoing':
                 payload_new_endpoint = {
-                    "tpin": "1018798746",
-                    "bhfId": "000",
+                    "tpin": company.tpin,
+                    "bhfId": company.bhf_id,
                     "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
                     "orgSarNo": 0,
                     "regTyCd": "M",
@@ -215,7 +219,7 @@ class StockPicking(models.Model):
                 print('Payload being sent:', json.dumps(payload_new_endpoint, indent=4))
 
                 try:
-                    response = requests.post('http://localhost:8085/stock/saveStockItems', json=payload_new_endpoint)
+                    response = requests.post(config_settings.stock_io_endpoint, json=payload_new_endpoint)
                     response.raise_for_status()
                     result_msg_new_endpoint = response.json().get('resultMsg', 'No result message returned')
 

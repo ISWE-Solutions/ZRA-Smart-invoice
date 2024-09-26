@@ -13,4 +13,4 @@ from . import contacts
 from . import item_composition
 from . import scrap
 from . import sales_order
-
+from . import company
