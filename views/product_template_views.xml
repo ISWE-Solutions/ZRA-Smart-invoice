@@ -17,7 +17,7 @@
                     <field name="cd"/>
                     <field name="quantity_unit_cdNm"/>
                     <field name="quantity_unit_cd"/>
-                    <field name="item_Cd" readonly="1"/>
+                    <field name="item_Cd" readonly="0"/>
                 </group>
             </xpath>
         </field>

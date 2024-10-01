@@ -23,7 +23,7 @@ class ProductTemplate(models.Model):
     packaging_unit_cd = fields.Char(string='Packaging Code', readonly=True, store=True)
     cdNm = fields.Many2one('country.data', string='Country')
     cd = fields.Char(string='Origin Country Code', readonly=True, store=True)
-    item_Cd = fields.Char(string='Item Code', readonly=True, store=True)
+    item_Cd = fields.Char(string='Item Code', readonly=False, store=True)
 
     taxes_id = fields.Many2many(
         'account.tax',
@@ -34,7 +34,7 @@ class ProductTemplate(models.Model):
 
     detailed_type = fields.Selection(
         selection=[
-            ('product', 'Finished Product'),
+            ('product', 'Storable Product'),
             ('consu', 'Consumable'),
             ('service', 'Service'),
         ],
@@ -42,6 +42,10 @@ class ProductTemplate(models.Model):
         string='Product Type',
     )
 
+    def copy(self, default=None):
+        # Set item code to blank during duplication
+        default = dict(default or {}, item_Cd="")
+        return super(ProductTemplate, self).copy(default)
 
 
     @api.depends('detailed_type')
@@ -88,18 +92,43 @@ class ProductTemplate(models.Model):
             selection = detailed_type_field.get('selection', [])
             for i, (value, label) in enumerate(selection):
                 if value == 'product':
-                    selection[i] = (value, 'Finished Product')
+                    selection[i] = (value, 'Storable Product')
             detailed_type_field['selection'] = selection
         return res
 
     def generate_item_code(self, cd, product_type, packaging_unit, quantity_unit):
+        cd = cd if cd else "ISW"
+        product_type = product_type if product_type else ""
+        packaging_unit = packaging_unit if packaging_unit else ""
+        quantity_unit = quantity_unit if quantity_unit else ""
+
+        # Generate the initial item code
         sequence = self.env['item.code.sequence'].search([], limit=1)
         if not sequence:
             sequence = self.env['item.code.sequence'].create({})
+
         next_number = sequence.next_number
-        sequence.next_number += 1
-        next_number_str = str(next_number).zfill(7)
+        next_number_str = str(next_number).zfill(7)  # 7-digit zero-padded number
         item_code = f"{cd}{product_type}{packaging_unit}{quantity_unit}{next_number_str}"
+
+        # Check if item code already exists
+        existing_code = self.env['product.template'].search([('item_Cd', '=', item_code)], limit=1)
+        if existing_code:
+            if self._context.get('is_create', False):  # Check if it's a create operation
+                # Increment the number to make the code unique
+                while self.env['product.template'].search([('item_Cd', '=', item_code)], limit=1):
+                    next_number += 1
+                    next_number_str = str(next_number).zfill(7)
+                    item_code = f"{cd}{product_type}{packaging_unit}{quantity_unit}{next_number_str}"
+
+                # Update the sequence to the new next number
+                sequence.next_number = next_number + 1
+            else:  # If it's a write operation, raise a validation error
+                raise ValidationError(_('Item code "%s" already exists. Please choose a different code.') % item_code)
+
+        # Save the sequence for future use
+        sequence.next_number += 1
+
         return item_code
 
     @api.onchange('classification')
@@ -142,9 +171,8 @@ class ProductTemplate(models.Model):
     def create(self, vals):
         _logger.info("Creating product with values: %s", vals)
         vals['is_updating'] = False
-        if 'cdNm' in vals:
-            country = self.env['country.data'].browse(vals['cdNm'])
-            vals['cd'] = country.country_cd
+
+        # Ensure that classification, quantity, and packaging codes are properly set before validation
         if 'classification' in vals:
             classification = self.env['zra.item.data'].browse(vals['classification'])
             vals.update({
@@ -160,6 +188,19 @@ class ProductTemplate(models.Model):
         if 'packaging_data_cdNm' in vals:
             packaging_unit = self.env['packaging.unit.data'].browse(vals['packaging_data_cdNm'])
             vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
+        if 'cdNm' in vals:
+            country = self.env['country.data'].browse(vals['cdNm'])
+            vals['cd'] = country.country_cd
+
+        # Validate if the fields are empty after updating the values
+        if not vals.get('item_cls_cd'):
+            raise ValidationError(_('Item Classification Code is required.'))
+        if not vals.get('packaging_unit_cd'):
+            raise ValidationError(_('Packaging Unit Code is required.'))
+        if not vals.get('cd'):
+            raise ValidationError(_('Origin Country Code is required.'))
+        if not vals.get('quantity_unit_cd'):
+            raise ValidationError(_('Quantity Unit Code is required.'))
 
         record = super(ProductTemplate, self.with_context(is_create=True)).create(vals)
         record.validate_single_tax()
@@ -168,41 +209,64 @@ class ProductTemplate(models.Model):
         _logger.info("Product created with ID: %s", record.id)
         return record
 
-    # @api.model
-    # def write(self, vals):
-    #     if self.env.context.get('is_create', False):
-    #         # Prevent write operations if it's a creation
-    #         return super(ProductTemplate, self).write(vals)
-    #
-    #     _logger.info("Updating product with values: %s", vals)
-    #     if 'cdNm' in vals:
-    #         country = self.env['country.data'].browse(vals['cdNm'])
-    #         vals['cd'] = country.country_cd
-    #     if 'classification' in vals:
-    #         classification = self.env['zra.item.data'].browse(vals['classification'])
-    #         vals.update({
-    #             'item_cls_cd': classification.itemClsCd,
-    #             'item_cls_lvl': classification.itemClsLvl,
-    #             'tax_ty_cd': classification.taxTyCd,
-    #             'mjr_tg_yn': classification.mjrTgYn,
-    #             'use_yn': classification.useYn
-    #         })
-    #     if 'quantity_unit_cdNm' in vals:
-    #         quantity_unit = self.env['quantity.unit.data'].browse(vals['quantity_unit_cdNm'])
-    #         vals['quantity_unit_cd'] = quantity_unit.quantity_unit_cd
-    #     if 'packaging_data_cdNm' in vals:
-    #         packaging_unit = self.env['packaging.unit.data'].browse(vals['packaging_data_cdNm'])
-    #         vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
-    #
-    #     result = super(ProductTemplate, self).write(vals)
-    #     self.validate_single_tax()
-    #     self.validate_taxes()
-    #     self._handle_post_item_data(vals, is_create=False)
-    #     _logger.info("Product updated with ID: %s", self.id)
-    #     return result
+    @api.model
+    def write(self, vals):
+        if self.env.context.get('is_create', False):
+            # Prevent write operations if it's a creation
+            return super(ProductTemplate, self).write(vals)
+
+        # Validate if item_Cd already exists
+        if 'item_Cd' in vals and self.env['product.template'].search(
+                [('item_Cd', '=', vals['item_Cd']), ('id', '!=', self.id)], limit=1):
+            raise ValidationError(
+                _('Item code "%s" already exists. Please choose a different code.') % vals['item_Cd'])
+
+        _logger.info("Updating product with values: %s", vals)
+
+        # Perform other updates
+        if 'cdNm' in vals:
+            country = self.env['country.data'].browse(vals['cdNm'])
+            vals['cd'] = country.country_cd
+
+        if 'classification' in vals:
+            classification = self.env['zra.item.data'].browse(vals['classification'])
+            vals.update({
+                'item_cls_cd': classification.itemClsCd,
+                'item_cls_lvl': classification.itemClsLvl,
+                'tax_ty_cd': classification.taxTyCd,
+                'mjr_tg_yn': classification.mjrTgYn,
+                'use_yn': classification.useYn
+            })
+
+        if 'quantity_unit_cdNm' in vals:
+            quantity_unit = self.env['quantity.unit.data'].browse(vals['quantity_unit_cdNm'])
+            vals['quantity_unit_cd'] = quantity_unit.quantity_unit_cd
+
+        if 'packaging_data_cdNm' in vals:
+            packaging_unit = self.env['packaging.unit.data'].browse(vals['packaging_data_cdNm'])
+            vals['packaging_unit_cd'] = packaging_unit.packaging_unit_cd
+
+        # Now save the data
+        result = super(ProductTemplate, self).write(vals)
+
+        # Perform any post-write operations
+        self.validate_single_tax()
+        self.validate_taxes()
+        self._handle_post_item_data(vals, is_create=False)
+
+        _logger.info("Product updated with ID: %s", self.id)
+        return result
+
 
     def _handle_post_item_data(self, vals, is_create):
         config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+
+        if not config_settings:
+            raise ValidationError("Configuration settings not found.")
+
+        # Log the URLs for debugging
+        _logger.info(f"Inventory Endpoint: {config_settings.inventory_endpoint}")
+        _logger.info(f"Inventory Update Endpoint: {config_settings.inventory_update_endpoint}")
 
         if is_create:
             url = config_settings.inventory_endpoint
@@ -211,13 +275,23 @@ class ProductTemplate(models.Model):
             url = config_settings.inventory_update_endpoint
             success_message = "API Response Item updated"
 
+        if not url:
+            raise ValidationError("URL is not set. Please configure the URL in settings.")
+
         self._post_item_data(vals, url, success_message)
 
     def _post_item_data(self, vals, url, success_message):
+        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
         company = self.env.company
         current_user = self.env.user
         if not self.item_Cd:
             self.item_Cd = self.generate_item_code(self.cd, '2', self.packaging_unit_cd, self.quantity_unit_cd)
+
+        if not url:
+            raise ValidationError("URL is not set. Please configure the URL in settings.")
+
+            # Determine if it's a create operation based on the presence of 'createItem' in the URL
+        is_create = "createItem" in url
 
         payload = {
             "tpin": company.tpin,
@@ -245,6 +319,17 @@ class ProductTemplate(models.Model):
         }
         headers = {'Content-Type': 'application/json'}
 
+        # Additional payload modifications for update cases
+        if not is_create:
+            payload.update({
+                "iplCatCd": "IPL1",
+                "tlCatCd": "TL",
+                "exciseTxCatCd": "EXEEG"
+            })
+
+        _logger.info(f"Using URL: {url}")
+
+        # Check if 'updateItem' is part of the URL and update the payload accordingly
         if 'updateItem' in url:
             payload.update({
                 "iplCatCd": "IPL1",

@@ -517,7 +517,7 @@ class AccountMove(models.Model):
             "lpoNumber": lpo or None,
             "currencyTyCd": self.currency_id.name if self.currency_id.name else "ZMW",
             "exchangeRt": str(round(exchange_rate, 2)),
-            "destnCountryCd": export_country_code or "ZM",
+            "destnCountryCd": export_country_code,
             "dbtRsnCd": "",
             "invcAdjustReason": "",
             "itemList": [
@@ -749,7 +749,7 @@ class AccountMove(models.Model):
             "lpoNumber": lpo or None,
             "currencyTyCd": self.currency_id.name if self.currency_id.name else "ZMW",
             "exchangeRt": str(round(exchange_rate, 2)),
-            "destnCountryCd": export_country_code or "ZM",
+            "destnCountryCd": export_country_code,
             "dbtRsnCd": "",
             "invcAdjustReason": "",
             "itemList": [
