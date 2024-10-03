@@ -27,54 +27,7 @@
                             <setting>
                             </setting>
 
-                            <setting help="ZRA Linking of Endpoints">
-                                <div class="o_setting_container">
-                                    <h2>End Point</h2>
-                                    <br/>
-                                </div>
-                                <p>These fields are used to align your endpoint URLs in relation to where your VSDC WAR
-                                    file is used for ZRA smart invoice.
-                                </p>
-                                <div class="app_settings_block" data-key="zra_endpoints">
-                                    <!-- First group of fields -->
-                                    <group>
-                                        <field name="sales_endpoint" string="Sales ZRA Endpoint" style="width: 200%;"/>
-                                        <field name="purchase_endpoint" string="Purchase ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                    </group>
-                                    <!-- Second group of fields below -->
-                                    <group>
-                                        <field name="purchase_si_endpoint" string="Purchase SI ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                        <field name="inventory_endpoint" string="Inventory ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                    </group>
-
-                                     <group>
-                                        <field name="classification_endpoint" string="Item Classification codes Endpoint"
-                                               style="width: 200%;"/>
-                                        <field name="class_codes_endpoint" string="Item class code ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                    </group>
-
-                                    <group>
-                                        <field name="import_endpoint" string="Import ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                        <field name="stock_io_endpoint" string="Stock I/O ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                    </group>
-                                    <group>
-                                        <field name="stock_master_endpoint" string="Stock Master ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                    </group>
-                                    <group>
-                                        <field name="import_update_endpoint" string="Import Update ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                        <field name="inventory_update_endpoint" string="Inventory Update ZRA Endpoint"
-                                               style="width: 200%;"/>
-                                    </group>
-                                </div>
-                            </setting>
+                            
 
 
                         </block>
