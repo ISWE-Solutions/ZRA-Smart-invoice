@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
     <!-- Root Menu for ZRA Smart Invoice -->
-    <menuitem name="ZRA Smart Invoice" id="menu_root_zra_smart_invoice"
-              web_icon="zra_smart_invoice,static/description/logo.png"/>
+    <menuitem id="si_config" name="Smart invoice configurations" parent="menu_root_zra_smart_invoice"/>
+    <menuitem id="si_url" name="VSDC Endpoint address" parent="si_config"
+              action="action_view_form_config_smart_invoice"/>
 
     <!-- ZRA Purchase under ZRA Smart Invoice App -->
     <menuitem id="menu_zra_purchase_root" name="ZRA SI Purchase" parent="menu_root_zra_smart_invoice"/>

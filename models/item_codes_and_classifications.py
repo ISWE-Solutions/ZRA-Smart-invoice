@@ -19,7 +19,7 @@ class ZraItemData(models.Model):
 
     @api.model
     def fetch_and_store_classification_data(self):
-        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        config_settings = self.env['purchase.data'].sudo().search([], limit=1)
         company = self.env.company
         url = config_settings.classification_endpoint
         payload = {
@@ -56,7 +56,7 @@ class CodeData(models.AbstractModel):
 
     @api.model
     def fetch_common_code_data(self):
-        config_settings = self.env['res.config.settings'].sudo().search([], limit=1)
+        config_settings = self.env['purchase.data'].sudo().search([], limit=1)
         company = self.env.company
         url = config_settings.class_codes_endpoint
         payload = {
