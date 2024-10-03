@@ -37,7 +37,7 @@ class AccountMove(models.Model):
     datetime_field = fields.Datetime(string='Date Time', default=fields.Datetime.now)
 
     def send_to_external_api(self, order_payload):
-        config_settings = self.env['purchase.data'].sudo().search([], limit=1)
+        config_settings = self.env['endpoints'].sudo().search([], limit=1)
 
         sales_url = config_settings.sales_endpoint
         stock_url = config_settings.stock_io_endpoint
@@ -292,7 +292,7 @@ class AccountMove(models.Model):
 
     def action_post(self):
         res = super(AccountMove, self).action_post()
-        config_settings = self.env['purchase.data'].sudo().search([], limit=1)
+        config_settings = self.env['endpoints'].sudo().search([], limit=1)
 
         if self.move_type in ['out_invoice', 'out_refund', 'in_refund']:
             tpin, lpo, export_country_code = self.get_sales_order_fields()
@@ -437,7 +437,7 @@ class AccountMove(models.Model):
         company = self.env.company
         tpin, lpo, export_country_code = self.get_sales_order_fields()
         exchange_rate = self.get_exchange_rate(self.currency_id, self.env.company.currency_id)
-        config_settings = self.env['purchase.data'].sudo().search([], limit=1)
+        config_settings = self.env['endpoints'].sudo().search([], limit=1)
         payload = {
             "tpin": company.tpin,
             "bhfId": company.bhf_id,
@@ -658,7 +658,7 @@ class AccountMove(models.Model):
         reversal_move = self.env['account.move.reversal'].browse(reversal_id)
         reversal_reason = reversal_move.reason if reversal_move else "01"
         print(f'Fetched Reversal Reason: {reversal_reason}')
-        config_settings = self.env['purchase.data'].sudo().search([], limit=1)
+        config_settings = self.env['endpoints'].sudo().search([], limit=1)
 
         # Fetch the related sale order to get the LPO and export country code
         sale_order = self.env['sale.order'].search([('name', '=', self.invoice_origin)], limit=1)
@@ -1019,7 +1019,7 @@ class AccountMove(models.Model):
         # tpin = self.partner_id.tpin if self.partner_id else None
         tpin, lpo, export_country_code = self.get_sales_order_fields()
         print(f"Original Reference in debit_note_payload: {original_ref}")
-        config_settings = self.env['purchase.data'].sudo().search([], limit=1)
+        config_settings = self.env['endpoints'].sudo().search([], limit=1)
         debit_move = self.env['account.move'].browse(self._context.get('active_id'))
         partner = debit_move.partner_id
         debit_note_reason = self.get_debit_note_reason()

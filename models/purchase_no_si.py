@@ -16,7 +16,7 @@ class StockPicking(models.Model):
 
         res = super(StockPicking, self).button_validate()
 
-        config_settings = self.env['purchase.data'].sudo().search([], limit=1)
+        config_settings = self.env['endpoints'].sudo().search([], limit=1)
 
         for picking in self:
             print(f'Processing picking with type: {picking.picking_type_id.code}')

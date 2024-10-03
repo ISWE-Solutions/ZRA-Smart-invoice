@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from . import purchase_no_si
+from . import endpoints
 from . import purchase_si
 from . import config
 from . import save_stock_master

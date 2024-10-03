@@ -3,12 +3,13 @@
 
     <record id="view_form_config_smart_invoice" model="ir.ui.view">
         <field name="name">VSDC Endpoint URLs</field>
-        <field name="model">purchase.data</field>
+        <field name="model">endpoints</field>
         <field name="arch" type="xml">
             <form string="Smart Invoice Configuration">
                 <sheet>
                     <h2>End Point</h2>
-                    <p style="margin-top:3em; margin-bottom:3em;">These fields are used to align your endpoint URLs in relation to where your VSDC WAR file is used
+                    <p style="margin-top:3em; margin-bottom:3em;">These fields are used to align your endpoint URLs in
+                        relation to where your VSDC WAR file is used
                         for ZRA smart invoice.
                     </p>
                     <group>
@@ -49,7 +50,7 @@
     <!-- Action to open the config.smart_invoice form view -->
     <record id="action_view_form_config_smart_invoice" model="ir.actions.act_window">
         <field name="name">Smart Invoice Configuration</field>
-        <field name="res_model">purchase.data</field>
+        <field name="res_model">endpoints</field>
         <field name="view_mode">form</field>
         <field name="view_id" ref="view_form_config_smart_invoice"/>
     </record>
