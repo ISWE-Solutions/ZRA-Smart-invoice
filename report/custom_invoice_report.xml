@@ -94,9 +94,9 @@
                             <strong>Export Country:</strong>
                             <span t-esc="o.export_country_name"/>
                         </div>
-                        <div t-if="o.payment_type_text">
+                        <div t-if="o.custom_payment_type_text">
                             <strong>Payment Type:</strong>
-                            <span t-esc="o.payment_type_text"/>
+                            <span t-esc="o.custom_payment_type_text"/>
                         </div>
                         <div t-if="o.move_type == 'out_refund' and o.reversal_reason_text">
                             <strong>Refund Reason:</strong>

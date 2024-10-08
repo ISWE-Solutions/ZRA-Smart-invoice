@@ -50,7 +50,7 @@
                     </page>
                 </xpath>
                 <xpath expr="//field[@name='partner_id']" position="after">
-                    <field name="payment_type" string="Payment Type"/>
+                    <field name="custom_payment_type" string="Payment Type"/>
                 </xpath>
             </field>
         </record>
