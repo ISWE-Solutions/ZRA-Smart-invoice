@@ -17,7 +17,7 @@ class AccountMove(models.Model):
 
     sale_type = fields.Char('Sale Type Code', default='N')
     receipt_type = fields.Char('Receipt Type Code', default='S')
-    # payment_type = fields.Char('Payment Type Code', default='01')
+    # payment_type = fields.Char('Payment Type Code')
     sales_status = fields.Char('Sales Status Code', default='02')
     tpin = fields.Char(string='TPIN', size=10)
     export_country_id = fields.Many2one('res.country', string='Export Country')
@@ -35,6 +35,21 @@ class AccountMove(models.Model):
     qr_code_url = fields.Char(string='QR Code URL')
     qr_code_image = fields.Char(string='QR Code Image')
     datetime_field = fields.Datetime(string='Date Time', default=fields.Datetime.now)
+
+    def create(self, vals):
+        """ Override create to set the values from sale order if they exist """
+        # Check for sales order reference in vals
+        if 'invoice_origin' in vals:
+            sale_order = self.env['sale.order'].search([('name', '=', vals['invoice_origin'])], limit=1)
+            if sale_order:
+                vals['tpin'] = sale_order.tpin or ''
+                vals['lpo'] = sale_order.lpo or ''
+                vals['export_country_id'] = sale_order.export_country_id.id or False
+
+        # Create the account move
+        move = super(AccountMove, self).create(vals)
+        return move
+
 
     def send_to_external_api(self, order_payload):
         config_settings = self.env['endpoints'].sudo().search([], limit=1)
@@ -95,7 +110,7 @@ class AccountMove(models.Model):
         ('04', 'Other [specify]')
     ], string='Debit Note Reason')
     exchange_rate = fields.Char(string='Exchange rate')
-    payment_type = fields.Selection([
+    custom_payment_type = fields.Selection([
         ('01', 'CASH'),
         ('02', 'CREDIT'),
         ('03', 'CASH/CREDIT'),
@@ -106,7 +121,7 @@ class AccountMove(models.Model):
         ('08', 'OTHER'),
     ], string='Payment Method', required=False, default="01")
 
-    @api.depends('reversal_reason', 'debit_note_reason', 'payment_type')
+    @api.depends('reversal_reason', 'debit_note_reason', 'custom_payment_type')
     def _compute_reason_text(self):
         reversal_reason_dict = dict([
             ('01', 'Missing Quantity'),
@@ -131,7 +146,7 @@ class AccountMove(models.Model):
             ('04', 'Other [specify]')
         ])
 
-        payment_type_dict = dict([
+        custom_payment_type_dict = dict([
             ('01', 'CASH'),
             ('02', 'CREDIT'),
             ('03', 'CASH/CREDIT'),
@@ -145,11 +160,11 @@ class AccountMove(models.Model):
         for record in self:
             record.reversal_reason_text = reversal_reason_dict.get(record.reversal_reason, "")
             record.debit_note_reason_text = debit_note_reason_dict.get(record.debit_note_reason, "")
-            record.payment_type_text = payment_type_dict.get(record.payment_type, "")
+            record.custom_payment_type_text = custom_payment_type_dict.get(record.custom_payment_type, "")
 
     reversal_reason_text = fields.Char(string='Reversal Reason Text', compute='_compute_reason_text')
     debit_note_reason_text = fields.Char(string='Debit Note Reason Text', compute='_compute_reason_text')
-    payment_type_text = fields.Char(string='Payment Type', compute='_compute_reason_text')
+    custom_payment_type_text = fields.Char(string='Payment Type', compute='_compute_reason_text')
 
     @api.constrains('tpin')
     def _check_tpin(self):
@@ -294,6 +309,9 @@ class AccountMove(models.Model):
         res = super(AccountMove, self).action_post()
         config_settings = self.env['endpoints'].sudo().search([], limit=1)
 
+        # Check for stockable products only
+        stockable_product_lines = self.invoice_line_ids.filtered(lambda l: l.product_id.detailed_type == 'product')
+
         if self.move_type in ['out_invoice', 'out_refund', 'in_refund']:
             tpin, lpo, export_country_code = self.get_sales_order_fields()
             export_country = self.env['res.country'].search([('code', '=', export_country_code)], limit=1)
@@ -311,55 +329,88 @@ class AccountMove(models.Model):
                     'exchange_rate': round(exchange_rate, 2)
                 })
 
-        if self.move_type == 'out_invoice':
-            payload = self.generate_sales_payload()
-            self._post_to_api(config_settings.sales_endpoint, payload, "Save Sales API Response resultMsg")
-        elif self.move_type == 'out_refund':
-            if not self._is_internet_connected():
-                raise UserError("Cannot perform credit note offline. Please check your internet connection.")
+            # Always post the sales payload, even if no stockable products
+            if self.move_type == 'out_invoice':
+                payload = self.generate_sales_payload()  # Sales payload for all products (including services)
+                self._post_to_api(config_settings.sales_endpoint, payload, "Save Sales API Response resultMsg")
 
-            payload = self.credit_note_payload()
-            self._post_to_api(config_settings.sales_endpoint, payload,
-                              "Save Credit Note API Response resultMsg")
+            # Only handle stock-related operations for stockable products
+            if stockable_product_lines:
+                # Process stockable products for stock APIs
+                if self.move_type == 'out_invoice':
+                    payload_stock_items = self.generate_stock_payload_items(stockable_product_lines)
+                    self._post_to_stock_api(config_settings.stock_io_endpoint, payload_stock_items,
+                                            "Save Stock Item API Response")
 
-            reversal_id = self._context.get('active_id')
-            reversal_move = self.env['account.move.reversal'].browse(reversal_id)
-            reversal_reason = reversal_move.reason if reversal_move else "01"
-            self.write({'reversal_reason': reversal_reason})
-        elif self.move_type == 'in_refund':
-            original_ref = self.ref
-            payload = self.debit_note_payload(original_ref)
-            self._post_to_api(config_settings.sales_endpoint, payload,
-                              "Save Debit Note API Response resultMsg")
+                    payload_stock_master = self.generate_stock_payload_master(stockable_product_lines)
+                    self._post_to_stock_api(config_settings.stock_master_endpoint, payload_stock_master,
+                                            "Stock Master API Response")
 
-            debit_reversal_id = self._context.get('active_id')
-            debit_reversal_move = self.env['account.debit.note'].browse(debit_reversal_id)
-            debit_note_reason = debit_reversal_move.reason if debit_reversal_move else "01"
-            self.write({'debit_note_reason': debit_note_reason})
+                elif self.move_type == 'out_refund':
+                    if not self._is_internet_connected():
+                        raise UserError("Cannot perform credit note offline. Please check your internet connection.")
 
-        for invoice in self:
-            if invoice.move_type == 'out_invoice' and invoice.invoice_origin:
-                # Find the related stock picking
-                pickings = self.env['stock.picking'].search([
-                    ('origin', '=', invoice.invoice_origin),
-                    ('state', 'in', ['confirmed', 'assigned'])
-                ])
-                for picking in pickings:
-                    picking.action_confirm()
-                    picking.action_assign()
-                    picking.button_validate()
-            else:
-                self._accounting_update_stock_quantities(invoice)
+                    payload = self.credit_note_payload()
+                    self._post_to_api(config_settings.sales_endpoint, payload,
+                                      "Save Credit Note API Response resultMsg")
 
-            if invoice.move_type == 'out_refund':
-                self._update_stock_quantities(invoice)
+                    reversal_id = self._context.get('active_id')
+                    reversal_move = self.env['account.move.reversal'].browse(reversal_id)
+                    reversal_reason = reversal_move.reason if reversal_move else "01"
+                    self.write({'reversal_reason': reversal_reason})
 
-            if invoice.move_type == 'in_refund':
-                self._debit_update_stock_quantities(invoice)
+                    # Only if there are stockable products
+                    payload_stock_items = self.generate_credit_stock_payload_items(stockable_product_lines)
+                    self._post_to_stock_api(config_settings.stock_io_endpoint, payload_stock_items,
+                                            "Save Stock Item API Response")
 
-        self.generate_qr_code_button()
+                    payload_stock_master = self.generate_stock_payload_master(stockable_product_lines)
+                    self._post_to_stock_api(config_settings.stock_master_endpoint, payload_stock_master,
+                                            "Stock Master API Response")
+
+                elif self.move_type == 'in_refund':
+                    original_ref = self.ref
+                    payload = self.debit_note_payload(original_ref)
+                    self._post_to_api(config_settings.sales_endpoint, payload, "Save Debit Note API Response resultMsg")
+
+                    debit_reversal_id = self._context.get('active_id')
+                    debit_reversal_move = self.env['account.debit.note'].browse(debit_reversal_id)
+                    debit_note_reason = debit_reversal_move.reason if debit_reversal_move else "01"
+                    self.write({'debit_note_reason': debit_note_reason})
+
+                    payload_stock_items = self.generate_debit_stock_payload_items(stockable_product_lines)
+                    self._post_to_stock_api(config_settings.stock_io_endpoint, payload_stock_items,
+                                            "Save Stock Item API Response")
+
+                    payload_stock_master = self.generate_stock_payload_master(stockable_product_lines)
+                    self._post_to_stock_api(config_settings.stock_master_endpoint, payload_stock_master,
+                                            "Stock Master API Response")
+
+            # Handle stock operations for stockable products only
+            for invoice in self:
+                if stockable_product_lines:
+                    if invoice.move_type == 'out_invoice' and invoice.invoice_origin:
+                        pickings = self.env['stock.picking'].search([
+                            ('origin', '=', invoice.invoice_origin),
+                            ('state', 'in', ['confirmed', 'assigned'])
+                        ])
+                        for picking in pickings:
+                            picking.action_confirm()
+                            picking.action_assign()
+                            picking.button_validate()
+                    else:
+                        self._accounting_update_stock_quantities(invoice, stockable_product_lines)
+
+                    if invoice.move_type == 'out_refund':
+                        self._update_stock_quantities(invoice, stockable_product_lines)
+
+                    if invoice.move_type == 'in_refund':
+                        self._debit_update_stock_quantities(invoice, stockable_product_lines)
+
+            self.generate_qr_code_button()
 
         return res
+
 
     def _is_internet_connected(self):
         try:
@@ -369,8 +420,9 @@ class AccountMove(models.Model):
         except OSError:
             return False
 
-    def _accounting_update_stock_quantities(self, invoice):
-        for line in invoice.invoice_line_ids:
+    def _accounting_update_stock_quantities(self, invoice, stockable_product_lines):
+        # Process only stockable product lines
+        for line in stockable_product_lines:
             product = line.product_id
             if not product:  # Skip lines without a product
                 continue
@@ -390,8 +442,8 @@ class AccountMove(models.Model):
                     'quantity': -quantity,  # Deduct the quantity
                 })
 
-    def _update_stock_quantities(self, invoice):
-        for line in invoice.invoice_line_ids:
+    def _update_stock_quantities(self, invoice, stockable_product_lines):
+        for line in stockable_product_lines:
             product = line.product_id
             if not product:  # Skip lines without a product
                 continue
@@ -411,8 +463,8 @@ class AccountMove(models.Model):
                     'quantity': quantity,
                 })
 
-    def _debit_update_stock_quantities(self, invoice):
-        for line in invoice.invoice_line_ids:
+    def _debit_update_stock_quantities(self, invoice, stockable_product_lines):
+        for line in stockable_product_lines:
             product = line.product_id
             if not product:  # Skip lines without a product
                 continue
@@ -436,18 +488,20 @@ class AccountMove(models.Model):
         current_user = self.env.user
         company = self.env.company
         tpin, lpo, export_country_code = self.get_sales_order_fields()
+        tpin = self.tpin
+        lpo = self.lpo
+        # export_country_code = self.export_country_id
         exchange_rate = self.get_exchange_rate(self.currency_id, self.env.company.currency_id)
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
         payload = {
             "tpin": company.tpin,
             "bhfId": company.bhf_id,
             "orgInvcNo": 0,
-            "cisInvcNo": self.name + "INV",
+            "cisInvcNo": self.name,
             "custTpin": tpin or "1000000000",
             "custNm": self.partner_id.name,
             "salesTyCd": self.sale_type or 'N',
             "rcptTyCd": self.receipt_type or 'S',
-            "pmtTyCd": self.payment_type,
+            "pmtTyCd": self.custom_payment_type,
             "salesSttsCd": self.sales_status or '02',
             "cfmDt": self.invoice_date.strftime('%Y%m%d%H%M%S') if self.invoice_date else None,
             "salesDt": datetime.now().strftime('%Y%m%d'),
@@ -551,8 +605,12 @@ class AccountMove(models.Model):
                 for index, line in enumerate(self.invoice_line_ids)
             ]
         }
+        return payload
 
-        # Additional payloads for stock items and stock master
+    def generate_stock_payload_items(self, stockable_product_lines):
+        tpin, lpo, export_country_code = self.get_sales_order_fields()
+        current_user = self.env.user
+        company = self.env.company
         payload_stock_items = {
             "tpin": company.tpin,
             "bhfId": company.bhf_id,
@@ -564,10 +622,10 @@ class AccountMove(models.Model):
             "custBhfId": "000",
             "sarTyCd": "11",
             "ocrnDt": self.invoice_date.strftime('%Y%m%d') if self.invoice_date else None,
-            "totItemCnt": len(self.invoice_line_ids),
-            "totTaxblAmt": round(sum(line.price_subtotal for line in self.invoice_line_ids), 2),
-            "totTaxAmt": round(sum(line.price_total - line.price_subtotal for line in self.invoice_line_ids), 2),
-            "totAmt": round(sum(line.price_total for line in self.invoice_line_ids), 2),
+            "totItemCnt": len(stockable_product_lines),  # Adjusted to count only stockable product lines
+            "totTaxblAmt": round(sum(line.price_subtotal for line in stockable_product_lines), 2),
+            "totTaxAmt": round(sum(line.price_total - line.price_subtotal for line in stockable_product_lines), 2),
+            "totAmt": round(sum(line.price_total for line in stockable_product_lines), 2),
             "remark": 'Sales',
             "regrId": current_user.name,
             "regrNm": current_user.id,
@@ -581,7 +639,6 @@ class AccountMove(models.Model):
                     "itemNm": line.product_id.name,
                     "bcd": line.product_id.barcode,
                     "pkgUnitCd": line.product_id.product_tmpl_id.packaging_unit_cd,
-                    # Example static value, can be dynamic
                     "pkg": line.quantity,
                     "qtyUnitCd": line.product_id.product_tmpl_id.quantity_unit_cd,
                     "qty": line.quantity,
@@ -599,13 +656,122 @@ class AccountMove(models.Model):
                     "taxAmt": round(line.price_total - line.price_subtotal, 2),
                     "totAmt": round((line.quantity * line.price_unit) + round(
                         line.price_total - line.price_subtotal, 2), 2),
-                } for index, line in enumerate(self.invoice_line_ids)
+                } for index, line in enumerate(stockable_product_lines)
             ]
         }
+        return payload_stock_items
 
-        self._post_to_stock_api(config_settings.stock_io_endpoint, payload_stock_items,
-                                "Save Stock Item API Response Endpoint")
+    def generate_credit_stock_payload_items(self, stockable_product_lines):
+        tpin, lpo, export_country_code = self.get_sales_order_fields()
+        current_user = self.env.user
+        company = self.env.company
+        payload_stock_items = {
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
+            "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
+            "orgSarNo": 0,
+            "regTyCd": "M",
+            "custTpin": tpin or "1000000000",
+            "custNm": self.partner_id.name,
+            "custBhfId": "000",
+            "sarTyCd": "03",
+            "ocrnDt": self.invoice_date.strftime('%Y%m%d') if self.invoice_date else None,
+            "totItemCnt": len(stockable_product_lines),  # Adjusted to count only stockable product lines
+            "totTaxblAmt": round(sum(line.price_subtotal for line in stockable_product_lines), 2),
+            "totTaxAmt": round(sum(line.price_total - line.price_subtotal for line in stockable_product_lines), 2),
+            "totAmt": round(sum(line.price_total for line in stockable_product_lines), 2),
+            "remark": 'Credit Note',
+            "regrId": current_user.name,
+            "regrNm": current_user.id,
+            "modrNm": current_user.name,
+            "modrId": current_user.id,
+            "itemList": [
+                {
+                    "itemSeq": index + 1,
+                    "itemCd": line.product_id.product_tmpl_id.item_Cd,
+                    "itemClsCd": line.product_id.product_tmpl_id.item_cls_cd,
+                    "itemNm": line.product_id.name,
+                    "bcd": line.product_id.barcode,
+                    "pkgUnitCd": line.product_id.product_tmpl_id.packaging_unit_cd,
+                    "pkg": line.quantity,
+                    "qtyUnitCd": line.product_id.product_tmpl_id.quantity_unit_cd,
+                    "qty": line.quantity,
+                    "itemExprDt": None,
+                    "prc": round(line.price_unit, 2),
+                    "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
+                    "totDcAmt": 0,
+                    "vatCatCd": self.get_tax_description(line.tax_ids),
+                    "exciseTxCatCd": "EXEEG",
+                    "vatAmt": round(line.price_total - line.price_subtotal, 2),
+                    "taxblAmt": 0,
+                    "iplAmt": 0,
+                    "tlAmt": 0,
+                    "exciseTxAmt": 0,
+                    "taxAmt": round(line.price_total - line.price_subtotal, 2),
+                    "totAmt": round((line.quantity * line.price_unit) + round(
+                        line.price_total - line.price_subtotal, 2), 2),
+                } for index, line in enumerate(stockable_product_lines)
+            ]
+        }
+        return payload_stock_items
 
+    def generate_debit_stock_payload_items(self, stockable_product_lines):
+        tpin, lpo, export_country_code = self.get_sales_order_fields()
+        current_user = self.env.user
+        company = self.env.company
+        payload_stock_items = {
+            "tpin": company.tpin,
+            "bhfId": company.bhf_id,
+            "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
+            "orgSarNo": 0,
+            "regTyCd": "M",
+            "custTpin": tpin or "1000000000",
+            "custNm": self.partner_id.name,
+            "custBhfId": "000",
+            "sarTyCd": "12",
+            "ocrnDt": self.invoice_date.strftime('%Y%m%d') if self.invoice_date else None,
+            "totItemCnt": len(stockable_product_lines),  # Adjusted to count only stockable product lines
+            "totTaxblAmt": round(sum(line.price_subtotal for line in stockable_product_lines), 2),
+            "totTaxAmt": round(sum(line.price_total - line.price_subtotal for line in stockable_product_lines), 2),
+            "totAmt": round(sum(line.price_total for line in stockable_product_lines), 2),
+            "remark": 'Debit Note',
+            "regrId": current_user.name,
+            "regrNm": current_user.id,
+            "modrNm": current_user.name,
+            "modrId": current_user.id,
+            "itemList": [
+                {
+                    "itemSeq": index + 1,
+                    "itemCd": line.product_id.product_tmpl_id.item_Cd,
+                    "itemClsCd": line.product_id.product_tmpl_id.item_cls_cd,
+                    "itemNm": line.product_id.name,
+                    "bcd": line.product_id.barcode,
+                    "pkgUnitCd": line.product_id.product_tmpl_id.packaging_unit_cd,
+                    "pkg": line.quantity,
+                    "qtyUnitCd": line.product_id.product_tmpl_id.quantity_unit_cd,
+                    "qty": line.quantity,
+                    "itemExprDt": None,
+                    "prc": round(line.price_unit, 2),
+                    "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
+                    "totDcAmt": 0,
+                    "vatCatCd": self.get_tax_description(line.tax_ids),
+                    "exciseTxCatCd": "EXEEG",
+                    "vatAmt": round(line.price_total - line.price_subtotal, 2),
+                    "taxblAmt": 0,
+                    "iplAmt": 0,
+                    "tlAmt": 0,
+                    "exciseTxAmt": 0,
+                    "taxAmt": round(line.price_total - line.price_subtotal, 2),
+                    "totAmt": round((line.quantity * line.price_unit) + round(
+                        line.price_total - line.price_subtotal, 2), 2),
+                } for index, line in enumerate(stockable_product_lines)
+            ]
+        }
+        return payload_stock_items
+
+    def generate_stock_payload_master(self, stockable_product_lines):
+        current_user = self.env.user
+        company = self.env.company
         payload_stock_master = {
             "tpin": company.tpin,
             "bhfId": company.bhf_id,
@@ -621,14 +787,10 @@ class AccountMove(models.Model):
                         ('product_id', '=', line.product_id.id),
                         ('location_id.usage', '=', 'internal')
                     ])) - line.quantity
-                } for index, line in enumerate(self.invoice_line_ids)
+                } for index, line in enumerate(stockable_product_lines)
             ]
         }
-
-        self._post_to_stock_api(config_settings.stock_master_endpoint, payload_stock_master,
-                                "Stock Master Endpoint response")
-
-        return payload
+        return payload_stock_master
 
     # ==============================================================================================
     #                                          CREDIT NOTE
@@ -643,31 +805,21 @@ class AccountMove(models.Model):
         return None
 
     def credit_note_payload(self):
-
         current_user = self.env.user
         company = self.env.company
-        # tpin = self.partner_id.tpin if self.partner_id else None
         tpin, lpo, export_country_code = self.get_sales_order_fields()
         rcpt_no = self.get_receipt_no(self)
         print(rcpt_no)
         credit_move = self.env['account.move'].browse(self._context.get('active_id'))
-        partner = credit_move.partner_id
         print('Credit Id', credit_move)
-        # Retrieve the active record for account.move.reversal
         reversal_id = self._context.get('active_id')
         reversal_move = self.env['account.move.reversal'].browse(reversal_id)
         reversal_reason = reversal_move.reason if reversal_move else "01"
         print(f'Fetched Reversal Reason: {reversal_reason}')
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
-
-        # Fetch the related sale order to get the LPO and export country code
         sale_order = self.env['sale.order'].search([('name', '=', self.invoice_origin)], limit=1)
         lpo = sale_order.lpo if sale_order else None
         export_country_code = sale_order.export_country_id.code if sale_order and sale_order.export_country_id else None
-
         exchange_rate = self.get_exchange_rate(self.currency_id, self.env.company.currency_id)
-
-        api_url = config_settings.sales_endpoint
         payload = {
             "tpin": company.tpin,
             "bhfId": company.bhf_id,
@@ -784,105 +936,28 @@ class AccountMove(models.Model):
             ]
         }
 
-        payload_stock_items = {
-            "tpin": company.tpin,
-            "bhfId": company.bhf_id,
-            "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
-            "orgSarNo": 0,
-            "regTyCd": "M",
-            "custTpin": self.partner_id.tpin or "1000000000",
-            "custNm": self.partner_id.name if self.partner_id else None,
-            "custBhfId": "000",
-            "sarTyCd": "03",
-            "ocrnDt": self.invoice_date.strftime('%Y%m%d') if self.invoice_date else None,
-            "totItemCnt": len(self.invoice_line_ids),
-            "totTaxblAmt": round(sum(line.price_subtotal for line in self.invoice_line_ids), 2),
-            "totTaxAmt": round(sum(line.price_total - line.price_subtotal for line in self.invoice_line_ids), 2),
-            "totAmt": round(sum(line.price_total for line in self.invoice_line_ids), 2),
-            "remark": 'Credit Note',
-            "regrId": current_user.id,
-            "regrNm": current_user.name,
-            "modrNm": current_user.name,
-            "modrId": current_user.id,
-            "itemList": [
-                {
-                    "itemSeq": index + 1,
-                    "itemCd": line.product_id.product_tmpl_id.item_Cd,
-                    "itemClsCd": line.product_id.product_tmpl_id.item_cls_cd,
-                    "itemNm": line.product_id.name,
-                    "bcd": line.product_id.barcode,
-                    "pkgUnitCd": line.product_id.product_tmpl_id.packaging_unit_cd,
-                    "pkg": line.quantity,
-                    "qtyUnitCd": line.product_id.product_tmpl_id.quantity_unit_cd,
-                    "qty": line.quantity,
-                    "itemExprDt": None,
-                    "prc": round(self.calculate_tax_inclusive_price(line), 2),
-                    "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
-                    "totDcAmt": 0,
-                    "taxblAmt": line.price_subtotal,
-                    "vatCatCd": self.get_tax_description(line.tax_ids),
-                    "iplCatCd": "IPL1",
-                    "tlCatCd": "TL",
-                    "exciseTxCatCd": "EXEEG",
-                    "vatAmt": round(line.price_total - line.price_subtotal, 2),
-                    "iplAmt": 0.0,
-                    "tlAmt": 0.0,
-                    "exciseTxAmt": 0.0,
-                    "taxAmt": round(line.price_total - line.price_subtotal, 2),
-                    "totAmt": round(line.price_total, 2)
-                } for index, line in enumerate(self.invoice_line_ids)
-            ]
-        }
-
-        self._post_to_stock_api(config_settings.stock_io_endpoint, payload_stock_items,
-                                "Save Stock Item API Response Endpoint")
-
-        for line in self.invoice_line_ids:
-            # Fetch the available quantity from the stock quant model
-            available_quants = self.env['stock.quant'].search([
-                ('product_id', '=', line.product_id.id),
-                ('location_id.usage', '=', 'internal')
-            ])
-            available_qty = sum(quant.quantity for quant in available_quants)
-
-            remaining_qty = available_qty + line.quantity
-
-        payload_stock_master = {
-            "tpin": company.tpin,
-            "bhfId": company.bhf_id,
-            "regrId": current_user.name,
-            "regrNm": current_user.id,
-            "modrNm": current_user.name,
-            "modrId": current_user.id,
-            "stockItemList": [
-                {
-                    "itemCd": line.product_id.product_tmpl_id.item_Cd,
-                    "rsdQty": remaining_qty
-                } for line in self.invoice_line_ids
-            ]
-        }
-        self._post_to_stock_api(config_settings.stock_master_endpoint, payload_stock_master,
-                                "Stock Master Endpoint response")
         return payload
 
     def _post_to_api(self, url, payload, success_message_prefix):
-        print('Sales Payload being sent:', json.dumps(payload, indent=4))
-        _logger.info('Sending payload to API: %s', json.dumps(payload, indent=4))
-
         try:
+            # Send the POST request
             response = requests.post(url, json=payload)
+
+            # Print and log the response status code
             print(f'API responded with status code: {response.status_code}')
             _logger.info(f'API responded with status code: {response.status_code}')
 
+            # Raise an error for bad responses
             response.raise_for_status()  # This will raise an HTTPError if the status is 4xx or 5xx
-            response_data = response.json()
 
-            print('API response:', json.dumps(response_data, indent=4))
-            _logger.info('API response: %s', json.dumps(response_data, indent=4))
+            # Attempt to parse the JSON response
+            response_data = response.json()
+            print(f'API Response: {response_data}')  # Print the entire response for debugging
 
             result_msg = response_data.get('resultMsg', 'No result message returned')
             data = response_data.get('data')
 
+            # Check if 'data' is present and extract fields
             if data:
                 rcpt_no = data.get('rcptNo')
                 intrl_data = data.get('intrlData')
@@ -892,20 +967,19 @@ class AccountMove(models.Model):
                 mrc_no = data.get('mrcNo')
                 qr_code_url = data.get('qrCodeUrl')
 
-                # Log the response data
+                # Log the extracted response data
                 print(f'Response Data - rcpt_no: {rcpt_no}, intrl_data: {intrl_data}, rcpt_sign: {rcpt_sign}, '
                       f'vsdc_rcpt_pbct_date: {vsdc_rcpt_pbct_date}, sdc_id: {sdc_id}, mrc_no: {mrc_no}, '
                       f'qr_code_url: {qr_code_url}')
-                _logger.info(f'Response Data - rcpt_no: {rcpt_no}, intrl_data: {intrl_data}, rcpt_sign: {rcpt_sign}, '
-                             f'vsdc_rcpt_pbct_date: {vsdc_rcpt_pbct_date}, sdc_id: {sdc_id}, mrc_no: {mrc_no}, '
-                             f'qr_code_url: {qr_code_url}')
 
+                # Update the record if available
                 if self:
                     record = self[0]
                     record.message_post(body=f"{success_message_prefix}: {result_msg}")
                     _logger.info(f'{success_message_prefix}: {result_msg}')
-                    print(f'{success_message_prefix}: {result_msg}: {result_msg} ')
+                    print(f'{success_message_prefix}: {result_msg}')
 
+                    # Update the record with response data
                     record.write({
                         'rcpt_no': rcpt_no,
                         'intrl_data': intrl_data,
@@ -923,14 +997,22 @@ class AccountMove(models.Model):
                 _logger.error('No data returned in the response')
                 print('No data returned in the response')
 
-        except requests.exceptions.RequestException as e:
-            _logger.error(f'API request failed: {str(e)}')
-            print(f'API request failed: {str(e)}')
-            # Handle additional error actions here if necessary
+        except requests.exceptions.HTTPError as http_err:
+            _logger.error(f'HTTP error occurred: {str(http_err)}')
+            print(f'HTTP error occurred: {str(http_err)}')
+        except requests.exceptions.ConnectionError as conn_err:
+            _logger.error(f'Connection error occurred: {str(conn_err)}')
+            print(f'Connection error occurred: {str(conn_err)}')
+        except requests.exceptions.Timeout as timeout_err:
+            _logger.error(f'Timeout error occurred: {str(timeout_err)}')
+            print(f'Timeout error occurred: {str(timeout_err)}')
+        except requests.exceptions.RequestException as req_err:
+            _logger.error(f'API request failed: {str(req_err)}')
+            print(f'API request failed: {str(req_err)}')
 
     def _post_to_stock_api(self, url, payload, success_message_prefix):
 
-        print('Payload being sent:', json.dumps(payload, indent=4))
+        print('Stock Payload being sent:', json.dumps(payload, indent=4))
         try:
             response = requests.post(url, json=payload)
             response.raise_for_status()
@@ -1016,13 +1098,9 @@ class AccountMove(models.Model):
     def debit_note_payload(self, original_ref):
         current_user = self.env.user
         company = self.env.company
-        # tpin = self.partner_id.tpin if self.partner_id else None
         tpin, lpo, export_country_code = self.get_sales_order_fields()
         print(f"Original Reference in debit_note_payload: {original_ref}")
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
         debit_move = self.env['account.move'].browse(self._context.get('active_id'))
-        partner = debit_move.partner_id
-        debit_note_reason = self.get_debit_note_reason()
         rcpt_no = self.get_debit_receipt_no(original_ref)
         print(f"Receipt Number: {rcpt_no}")
 
@@ -1031,7 +1109,6 @@ class AccountMove(models.Model):
         debit_note_reason = debit_reversal_move.reason if debit_reversal_move else "01"
         print(f'Fetched Reversal Reason: {debit_note_reason}')
 
-        # Fetch the related sale order to get the LPO and export country code
         sale_order = self.env['sale.order'].search([('name', '=', self.invoice_origin)], limit=1)
         lpo = sale_order.lpo if sale_order else None
         export_country_code = sale_order.export_country_id.code if sale_order and sale_order.export_country_id else None
@@ -1043,7 +1120,6 @@ class AccountMove(models.Model):
             "orgInvcNo": rcpt_no,
             "cisInvcNo": self.name,
             "custTpin": tpin or '1000000000',
-
             "custNm": self.partner_id.name,
             "salesTyCd": "N",
             "rcptTyCd": "D",
@@ -1117,7 +1193,7 @@ class AccountMove(models.Model):
             "lpoNumber": lpo or None,
             "currencyTyCd": self.currency_id.name if self.currency_id else "ZMW",
             "exchangeRt": str(round(exchange_rate, 2)),
-            "destnCountryCd": export_country_code or "ZM",
+            "destnCountryCd": export_country_code,
             "dbtRsnCd": debit_note_reason or "02",
             "invcAdjustReason": "",
             "itemList": [
@@ -1150,83 +1226,22 @@ class AccountMove(models.Model):
                 } for index, line in enumerate(self.invoice_line_ids)
             ]
         }
-        payload_stock_endpoint = {
-            "tpin": company.tpin,
-            "bhfId": company.bhf_id,
-            "sarNo": int(datetime.now().strftime('%m%d%H%M%S')),
-            "orgSarNo": 0,
-            "regTyCd": "M",
-            "custTpin": self.partner_id.tpin if self.partner_id else None,
-            "custNm": self.partner_id.name if self.partner_id else None,
-            "custBhfId": "000",
-            "sarTyCd": "12",
-            "ocrnDt": self.invoice_date.strftime('%Y%m%d') if self.invoice_date else None,
-            "totItemCnt": len(self.invoice_line_ids),
-            "totTaxblAmt": round(sum(line.price_subtotal for line in self.invoice_line_ids), 2),
-            "totTaxAmt": round(sum(line.price_total - line.price_subtotal for line in self.invoice_line_ids), 2),
-            "totAmt": round(sum(line.price_total for line in self.invoice_line_ids), 2),
-            "remark": 'debit Note',
-            "regrId": current_user.id,
-            "regrNm": current_user.name,
-            "modrNm": current_user.name,
-            "modrId": current_user.id,
-            "itemList": [
-                {
-                    "itemSeq": index + 1,
-                    "itemCd": line.product_id.product_tmpl_id.item_Cd,
-                    "itemClsCd": line.product_id.product_tmpl_id.item_cls_cd,
-                    "itemNm": line.product_id.name,
-                    "bcd": line.product_id.barcode,
-                    "pkgUnitCd": line.product_id.product_tmpl_id.packaging_unit_cd,
-                    "pkg": line.quantity,
-                    "qtyUnitCd": line.product_id.product_tmpl_id.quantity_unit_cd,
-                    "qty": line.quantity,
-                    "itemExprDt": None,
-                    "prc": round(self.calculate_tax_inclusive_price(line), 2),
-                    "splyAmt": round(line.quantity * self.calculate_tax_inclusive_price(line), 2),
-                    "totDcAmt": 0,
-                    "taxblAmt": line.price_subtotal,
-                    "vatCatCd": self.get_tax_description(line.tax_ids),
-                    "iplCatCd": "IPL1",
-                    "tlCatCd": "TL",
-                    "exciseTxCatCd": "EXEEG",
-                    "vatAmt": round(line.price_total - line.price_subtotal, 2),
-                    "iplAmt": 0.0,
-                    "tlAmt": 0.0,
-                    "exciseTxAmt": 0.0,
-                    "taxAmt": round(line.price_total - line.price_subtotal, 2),
-                    "totAmt": round(line.price_total, 2)
-                }
-                for index, line in enumerate(self.invoice_line_ids)
-            ]
-        }
-        self._post_to_stock_api(config_settings.stock_io_endpoint, payload_stock_endpoint,
-                                "Save Stock Item API Response Endpoint")
-        for line in self.invoice_line_ids:
-            # Fetch the available quantity from the stock quant model
-            available_quants = self.env['stock.quant'].search([
-                ('product_id', '=', line.product_id.id),
-                ('location_id.usage', '=', 'internal')
-            ])
-            available_qty = sum(quant.quantity for quant in available_quants)
-            remaining_qty = available_qty - line.quantity
-        payload_stock_master = {
-            "tpin": company.tpin,
-            "bhfId": company.bhf_id,
-            "regrId": current_user.name,
-            "regrNm": current_user.id,
-            "modrNm": current_user.name,
-            "modrId": current_user.id,
-            "stockItemList": [
-                {
-                    "itemCd": line.product_id.product_tmpl_id.item_Cd,
-                    "rsdQty": remaining_qty
-                } for line in self.invoice_line_ids
-            ]
-        }
-        self._post_to_stock_api(config_settings.stock_master_endpoint, payload_stock_master,
-                                "Stock Master Endpoint response")
+
         return payload
+
+
+    @api.constrains('tpin')
+    def _check_tpin(self):
+        for move in self:
+            if move.tpin and (not move.tpin.isdigit() or len(move.tpin) != 10):
+                raise ValidationError(_('Invalid TPIN. It must consist of exactly 10 digits.'))
+
+    @api.onchange('partner_id')
+    def _onchange_partner_id_tpin(self):
+        """ Auto-update the TPIN when a customer is selected if the partner has a tax ID """
+        if self.partner_id:
+            # Check if the partner has a TPIN and update it on the move
+            self.tpin = self.partner_id.vat or ''
 
 
 class AccountDebitNoteWizard(models.TransientModel):

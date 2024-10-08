@@ -24,6 +24,16 @@ class ProductTemplate(models.Model):
     cdNm = fields.Many2one('country.data', string='Country')
     cd = fields.Char(string='Origin Country Code', readonly=True, store=True)
     item_Cd = fields.Char(string='Item Code', readonly=False, store=True)
+    si_detailed_type = fields.Selection(
+        selection=[
+            ('2', 'Finished Product'),
+            ('3', 'Service'),
+            ('1', 'Raw Material'),
+        ],
+        default='1',
+        string='ZRA SI Product Type',
+        required=True
+    )
 
     taxes_id = fields.Many2many(
         'account.tax',
@@ -32,15 +42,18 @@ class ProductTemplate(models.Model):
 
     is_updating = fields.Boolean(default=False, store=False)
 
-    detailed_type = fields.Selection(
-        selection=[
-            ('product', 'Storable Product'),
-            ('consu', 'Consumable'),
-            ('service', 'Service'),
-        ],
-        default='product',
-        string='Product Type',
-    )
+
+
+
+    # detailed_type = fields.Selection(
+    #     selection=[
+    #         ('product', 'Storable Product'),
+    #         ('consu', 'Consumable'),
+    #         ('service', 'Service'),
+    #     ],
+    #     default='product',
+    #     string='Product Type',
+    # )
 
     def copy(self, default=None):
         # Set item code to blank during duplication
@@ -48,15 +61,33 @@ class ProductTemplate(models.Model):
         return super(ProductTemplate, self).copy(default)
 
 
-    @api.depends('detailed_type')
-    def _compute_type(self):
-        type_mapping = {
-            'product': 'product',
-            'consu': 'consu',
-            'service': 'service',
-        }
-        for record in self:
-            record.type = type_mapping.get(record.detailed_type, record.detailed_type)
+    # @api.depends('detailed_type')
+    # def _compute_type(self):
+    #     type_mapping = {
+    #         'product': 'product',
+    #         'consu': 'consu',
+    #         'service': 'service',
+    #     }
+    #     for record in self:
+    #         record.type = type_mapping.get(record.detailed_type, record.detailed_type)
+
+    @api.onchange('si_detailed_type')
+    def _onchange_si_detailed_type(self):
+        """ Auto-select product type based on si_detailed_type """
+        if self.si_detailed_type == '2':  # Finished Product
+            self.detailed_type = 'product'  # Storable Product
+        elif self.si_detailed_type == '3':  # Service
+            self.detailed_type = 'service'
+        elif self.si_detailed_type == '1':  # Raw Material
+            self.detailed_type = 'product'  # Storable Product
+
+    @api.onchange('detailed_type')
+    def _onchange_detailed_type(self):
+        """ Auto-select si_detailed_type based on detailed_type """
+        if self.detailed_type == 'product':  # Storable Product
+            self.si_detailed_type = '2'  # Finished Product
+        elif self.detailed_type == 'service':
+            self.si_detailed_type = '3'  # Service
 
     def get_primary_tax(self):
         # If 'self' is an instance of product.template, use 'self' directly
@@ -298,7 +329,7 @@ class ProductTemplate(models.Model):
             "bhfId": company.bhf_id,
             "itemCd": self.item_Cd,
             "itemClsCd": self.item_cls_cd,
-            "itemTyCd": "2",
+            "itemTyCd": self.si_detailed_type,
             "itemNm": self.name,
             "itemStdNm": self.name,
             "orgnNatCd": self.cd,
@@ -364,6 +395,13 @@ class ProductTemplate(models.Model):
                 'sticky': False
             }
         }
+
+    @api.constrains('taxes_id')
+    def _check_taxes_id(self):
+        """ Ensure taxes_id is not empty before proceeding """
+        for record in self:
+            if not record.taxes_id:
+                raise ValidationError("You must select a Tax before proceeding.")
 
 
 class ItemCodeSequence(models.Model):

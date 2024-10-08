@@ -27,6 +27,15 @@ class SaleOrder(models.Model):
                 else:
                     line.tax_id = False
 
+    def _prepare_invoice(self):
+        invoice_vals = super(SaleOrder, self)._prepare_invoice()
+        invoice_vals.update({
+            'tpin': self.tpin,
+            'lpo': self.lpo,
+            'export_country_id': self.export_country_id.id,
+        })
+        return invoice_vals
+
 class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
