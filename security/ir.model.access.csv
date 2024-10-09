@@ -2,8 +2,6 @@ id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access.product.template,access_product_template,zra_smart_invoice.model_product_template,base.group_user,1,1,1,1
 access.account.move.reversal,Access_account_move_Reversal,zra_smart_invoice.model_account_move_reversal,base.group_user,1,1,1,1
 access.purchase.data,access_purchase_data,zra_smart_invoice.model_purchase_data,base.group_user,1,1,1,1
-access.fetched.data,access_fetched_data,zra_smart_invoice.model_fetched_data,base.group_user,1,1,1,1
-access.fetched.data.item,access_fetched_data_item,zra_smart_invoice.model_fetched_data_item,base.group_user,1,1,1,1
 access.purchase.item,access_purchase_item,zra_smart_invoice.model_purchase_item,base.group_user,1,1,1,1
 access.import.data,access_import_data,zra_smart_invoice.model_import_data,base.group_user,1,1,1,1
 access.import.item,access_import_item,zra_smart_invoice.model_import_item,base.group_user,1,1,1,1
