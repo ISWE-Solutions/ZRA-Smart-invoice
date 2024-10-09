@@ -35,10 +35,4 @@
     <menuitem id="menu_inventory_zra_detailed" name="Select Imports" parent="menu_inventory_zra_root"
               action="action_import_data"/>
 
-    <menuitem id="menu_fetched_data_root"
-              name="Fetched Data"
-              sequence="10"
-              action="action_fetched_data"
-              parent="purchase.menu_purchase_root"/>
-
 </odoo>

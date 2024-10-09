@@ -496,7 +496,7 @@ class AccountMove(models.Model):
             "tpin": company.tpin,
             "bhfId": company.bhf_id,
             "orgInvcNo": 0,
-            "cisInvcNo": self.name,
+            "cisInvcNo": self.name + "OCT",
             "custTpin": tpin or "1000000000",
             "custNm": self.partner_id.name,
             "salesTyCd": self.sale_type or 'N',
@@ -954,10 +954,15 @@ class AccountMove(models.Model):
             response_data = response.json()
             print(f'API Response: {response_data}')  # Print the entire response for debugging
 
+            result_cd = response_data.get('resultCd', 'No result code returned')
             result_msg = response_data.get('resultMsg', 'No result message returned')
             data = response_data.get('data')
 
-            # Check if 'data' is present and extract fields
+            # Raise an error if the result code is not '000'
+            if result_cd != '000':
+                raise UserError(f"API Error - {result_msg} (Result Code: {result_cd})")
+
+            # If result code is '000', process the data as before
             if data:
                 rcpt_no = data.get('rcptNo')
                 intrl_data = data.get('intrlData')
@@ -972,7 +977,7 @@ class AccountMove(models.Model):
                       f'vsdc_rcpt_pbct_date: {vsdc_rcpt_pbct_date}, sdc_id: {sdc_id}, mrc_no: {mrc_no}, '
                       f'qr_code_url: {qr_code_url}')
 
-                # Update the record if available
+                # Update the record with response data
                 if self:
                     record = self[0]
                     record.message_post(body=f"{success_message_prefix}: {result_msg}")
@@ -1000,15 +1005,19 @@ class AccountMove(models.Model):
         except requests.exceptions.HTTPError as http_err:
             _logger.error(f'HTTP error occurred: {str(http_err)}')
             print(f'HTTP error occurred: {str(http_err)}')
+            raise UserError(f"API HTTP error occurred: {str(http_err)}")
         except requests.exceptions.ConnectionError as conn_err:
             _logger.error(f'Connection error occurred: {str(conn_err)}')
             print(f'Connection error occurred: {str(conn_err)}')
+            raise UserError(f"API Connection error occurred: {str(conn_err)}")
         except requests.exceptions.Timeout as timeout_err:
             _logger.error(f'Timeout error occurred: {str(timeout_err)}')
             print(f'Timeout error occurred: {str(timeout_err)}')
+            raise UserError(f"API Timeout error occurred: {str(timeout_err)}")
         except requests.exceptions.RequestException as req_err:
             _logger.error(f'API request failed: {str(req_err)}')
             print(f'API request failed: {str(req_err)}')
+            raise UserError(f"API request failed: {str(req_err)}")
 
     def _post_to_stock_api(self, url, payload, success_message_prefix):
 

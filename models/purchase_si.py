@@ -1033,7 +1033,7 @@ class PurchaseItem(models.Model):
     _description = 'Purchase Item'
 
     purchase_id = fields.Many2one('purchase.data', string='Purchase')
-    purchase_fetch_id = fields.Many2one('fetched.data', string='Fetched Data', required=True, ondelete='cascade')
+    # purchase_fetch_id = fields.Many2one('fetched.data', string='Fetched Data', required=True, ondelete='cascade')
     item_seq = fields.Integer(string='Item Sequence')
     item_cd = fields.Char(string='Item Code')
     item_nm = fields.Char(string='Item Name')
@@ -1119,59 +1119,59 @@ class PurchaseItem(models.Model):
             'tag': 'reload',
         }
 
-
-class FetchedData(models.Model):
-    _name = 'fetched.data'
-    _description = 'Fetched Data'
-
-    spplr_tpin = fields.Char(string='Supplier TPIN')
-    spplr_nm = fields.Char(string='Supplier Name')
-    spplr_bhf_id = fields.Char(string='Supplier BHF ID')
-    spplr_invc_no = fields.Integer(string='Invoice No')
-    rcpt_ty_cd = fields.Char(string='Receipt Type Code')
-    pmt_ty_cd = fields.Char(string='Payment Type Code')
-    cfm_dt = fields.Datetime(string='Confirmation Date')
-    sales_dt = fields.Date(string='Sales Date')
-    stock_rls_dt = fields.Datetime(string='Stock Release Date')
-    tot_item_cnt = fields.Integer(string='Total Item Count')
-    tot_taxbl_amt = fields.Float(string='Total Taxable Amount')
-    tot_tax_amt = fields.Float(string='Total Tax Amount')
-    tot_amt = fields.Float(string='Total Amount')
-    remark = fields.Text(string='Remark')
-    _rec_name = 'display_name'
-    purchase_id = fields.Many2one('purchase.data', string='Purchase', ondelete='cascade')
-
-    def unlink(self):
-        purchase_items = self.env['purchase.item'].search([('purchase_fetch_id', 'in', self.ids)])
-        if purchase_items:
-            purchase_items.unlink()  # Delete related purchase items
-        return super(FetchedData, self).unlink()
-
-    display_name = fields.Char(
-        string='Display Name',
-        compute='_compute_display_name',
-        store=True
-    )
-
-    @api.depends('spplr_nm', 'spplr_tpin', 'spplr_invc_no')
-    def _compute_display_name(self):
-        for record in self:
-            name = f"{record.spplr_nm or ''} - {record.spplr_tpin or ''} - Invoice: {record.spplr_invc_no or ''}"
-            record.display_name = name
-
-    item_list = fields.One2many('purchase.item', 'purchase_fetch_id', string='Item List')
-
-
-class FetchedDataItem(models.Model):
-    _name = 'fetched.data.item'
-    _description = 'Fetched Data Items'
-
-    item_cd = fields.Char('Item Code')
-    item_nm = fields.Char('Item Name')
-    quantity = fields.Float('Quantity')
-    price = fields.Float('Price')
-    total_amount = fields.Float('Total Amount')
-    fetched_data_id = fields.Many2one('fetched.data', string='Fetched Data Reference')
+#
+# class FetchedData(models.Model):
+#     _name = 'fetched.data'
+#     _description = 'Fetched Data'
+#
+#     spplr_tpin = fields.Char(string='Supplier TPIN')
+#     spplr_nm = fields.Char(string='Supplier Name')
+#     spplr_bhf_id = fields.Char(string='Supplier BHF ID')
+#     spplr_invc_no = fields.Integer(string='Invoice No')
+#     rcpt_ty_cd = fields.Char(string='Receipt Type Code')
+#     pmt_ty_cd = fields.Char(string='Payment Type Code')
+#     cfm_dt = fields.Datetime(string='Confirmation Date')
+#     sales_dt = fields.Date(string='Sales Date')
+#     stock_rls_dt = fields.Datetime(string='Stock Release Date')
+#     tot_item_cnt = fields.Integer(string='Total Item Count')
+#     tot_taxbl_amt = fields.Float(string='Total Taxable Amount')
+#     tot_tax_amt = fields.Float(string='Total Tax Amount')
+#     tot_amt = fields.Float(string='Total Amount')
+#     remark = fields.Text(string='Remark')
+#     _rec_name = 'display_name'
+#     purchase_id = fields.Many2one('purchase.data', string='Purchase', ondelete='cascade')
+#
+#     def unlink(self):
+#         purchase_items = self.env['purchase.item'].search([('purchase_fetch_id', 'in', self.ids)])
+#         if purchase_items:
+#             purchase_items.unlink()  # Delete related purchase items
+#         return super(FetchedData, self).unlink()
+#
+#     display_name = fields.Char(
+#         string='Display Name',
+#         compute='_compute_display_name',
+#         store=True
+#     )
+#
+#     @api.depends('spplr_nm', 'spplr_tpin', 'spplr_invc_no')
+#     def _compute_display_name(self):
+#         for record in self:
+#             name = f"{record.spplr_nm or ''} - {record.spplr_tpin or ''} - Invoice: {record.spplr_invc_no or ''}"
+#             record.display_name = name
+#
+#     item_list = fields.One2many('purchase.item', 'purchase_fetch_id', string='Item List')
+#
+#
+# class FetchedDataItem(models.Model):
+#     _name = 'fetched.data.item'
+#     _description = 'Fetched Data Items'
+#
+#     item_cd = fields.Char('Item Code')
+#     item_nm = fields.Char('Item Name')
+#     quantity = fields.Float('Quantity')
+#     price = fields.Float('Price')
+#     total_amount = fields.Float('Total Amount')
+#     fetched_data_id = fields.Many2one('fetched.data', string='Fetched Data Reference')
 
 
 class ProductProduct(models.Model):
