@@ -46,7 +46,7 @@
             <field name="amount_type">percent</field>
             <field name="description">A</field>
             <field name="tax_group_id" ref="tax_group"/>
-            <field name="price_include">TRUE</field>
+            <field name="price_include">True</field>
         </record>
         <!-- Minimum Taxable Value (MTV-16%) -->
         <record id="tax_type_mtv" model="account.tax">
@@ -56,7 +56,7 @@
             <field name="amount_type">percent</field>
             <field name="description">B</field>
             <field name="tax_group_id" ref="tax_group_mtv"/>
-            <field name="price_include">TRUE</field>
+            <field name="price_include">True</field>
         </record>
         <!-- Exports(0%) -->
         <record id="tax_type_exports" model="account.tax">
@@ -102,7 +102,7 @@
             <field name="amount_type">percent</field>
             <field name="description">RVAT</field>
             <field name="tax_group_id" ref="tax_group_reverse_vat"/>
-            <field name="price_include">TRUE</field>
+            <field name="price_include">True</field>
         </record>
         <!-- Disbursement -->
         <record id="tax_type_disbursement" model="account.tax">
