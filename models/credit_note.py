@@ -247,7 +247,7 @@ class AccountMoveReversal(models.TransientModel):
         return payload
 
     def create_credit_note_api_call(self):
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.sales_endpoint
         payload = self.create_credit_note_payload()
         return self._post_to_api(api_url, payload, "API Response Credit Note")
@@ -265,7 +265,7 @@ class AccountMoveReversal(models.TransientModel):
 
         credit_move = self.env['account.move'].browse(self._context.get('active_id'))
         partner = credit_move.partner_id
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
 
         # Print fetched reversal reason for debugging
         print(f'Fetched Reversal Reason: {reversal_reason}')

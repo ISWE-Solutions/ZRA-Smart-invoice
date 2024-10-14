@@ -2,7 +2,7 @@ from odoo import models, fields, api, _
 
 
 class Endpoints(models.Model):
-    _name = 'endpoints'
+    _inherit = 'res.company'
     _description = 'Zra VSDC endpoint location'
 
     fetch_data_button = fields.Boolean(string="Fetch Data")
@@ -24,7 +24,6 @@ class Endpoints(models.Model):
     stock_master_endpoint = fields.Char(string='Stock Master ZRA Endpoint',
                                         default="http://localhost:8085/stockMaster/saveStockMaster")
 
-    # Newly added fields
     import_update_endpoint = fields.Char(string='Import Update ZRA Endpoint',
                                          default="http://localhost:8085/imports/updateImportItems")
     inventory_update_endpoint = fields.Char(string='Inventory Update ZRA Endpoint',
@@ -32,20 +31,10 @@ class Endpoints(models.Model):
 
     @api.model
     def create(self, vals):
-        # Unlink all existing records
-        existing_records = self.search([])
-        if existing_records:
-            existing_records.unlink()
-
         # Proceed with the creation of the new record
         return super(Endpoints, self).create(vals)
 
-    @api.model
     def write(self, vals):
-        # Unlink all existing records before updating
-        existing_records = self.search([])
-        if existing_records:
-            existing_records.unlink()
-
         # Proceed with updating the current record
         return super(Endpoints, self).write(vals)
+

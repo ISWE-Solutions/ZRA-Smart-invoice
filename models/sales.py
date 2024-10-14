@@ -8,6 +8,7 @@ from odoo.exceptions import ValidationError, UserError
 import qrcode
 import base64
 from io import BytesIO
+import pytz
 
 _logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class AccountMove(models.Model):
 
 
     def send_to_external_api(self, order_payload):
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
 
         sales_url = config_settings.sales_endpoint
         stock_url = config_settings.stock_io_endpoint
@@ -307,7 +308,7 @@ class AccountMove(models.Model):
 
     def action_post(self):
         res = super(AccountMove, self).action_post()
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
 
         # Check for stockable products only
         stockable_product_lines = self.invoice_line_ids.filtered(lambda l: l.product_id.detailed_type == 'product')
@@ -495,13 +496,20 @@ class AccountMove(models.Model):
         tpin, lpo, export_country_code = self.get_sales_order_fields()
         tpin = self.tpin
         lpo = self.lpo
+        local_tz = pytz.timezone("Africa/Lusaka")  # e.g., 'America/New_York'
+        now = datetime.now(local_tz)
+        date_prefix = now.strftime('%Y/%m/%d/%H:%M:%S')  # Formats as YYYY/mm/dd/HH:MM:SS
+        sequence_number = self.env['ir.sequence'].next_by_code('account.move')  # Generates the next sequence number
+        if self.name.startswith('INV/') and '/' in self.name:
+            sequence_number = self.name.split('/')[-1]  # Get the last part, which is the numeric sequence
+        cisInvcNo_value = f'INV/{date_prefix}/{sequence_number}'
         # export_country_code = self.export_country_id
         exchange_rate = self.get_exchange_rate(self.currency_id, self.env.company.currency_id)
         payload = {
             "tpin": company.tpin,
             "bhfId": company.bhf_id,
             "orgInvcNo": 0,
-            "cisInvcNo": self.name,
+            "cisInvcNo": cisInvcNo_value,
             "custTpin": tpin or "1000000000",
             "custNm": self.partner_id.name,
             "salesTyCd": self.sale_type or 'N',

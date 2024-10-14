@@ -83,7 +83,7 @@ class ImportData(models.Model):
         global compute_fetch_selection_counter, fetch_import_data_counter
         global compute_fetch_selection_cache, compute_fetch_selection_last_request
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.import_endpoint
         payload = {
             "tpin": company.tpin,
@@ -563,7 +563,7 @@ class ImportData(models.Model):
                 item_cd = False
                 class_cd = False
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url =  config_settings.import_update_endpoint
         payload = {
             "tpin": company.tpin,
@@ -607,7 +607,7 @@ class ImportData(models.Model):
                 item_cd = False
                 class_cd = False
 
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.import_update_endpoint
         payload = {
             "tpin": company.tpin,
@@ -650,7 +650,7 @@ class ImportData(models.Model):
                 item_cd = False
                 class_cd = False
 
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.import_update_endpoint
         payload = {
             "tpin": company.tpin,
@@ -696,7 +696,7 @@ class ImportData(models.Model):
                 item_cd = False
                 class_cd = False
 
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.import_update_endpoint
         payload = {
             "tpin": company.tpin,
@@ -726,7 +726,7 @@ class ImportData(models.Model):
 
     def save_stock_items(self, imp_qty):
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.stock_io_endpoint
         payload = {
             "tpin": company.tpin,
@@ -764,7 +764,7 @@ class ImportData(models.Model):
 
     def save_stock_master(self, imp_qty):
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.stock_master_endpoint
         payload = {
             "tpin": company.tpin,
@@ -788,7 +788,7 @@ class ImportData(models.Model):
 
     def save_stock_items_full_confirmed(self):
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.stock_io_endpoint
 
         # Fetch existing quantities
@@ -869,7 +869,7 @@ class ImportData(models.Model):
             raise UserError(_('Failed to save stock items data.'))
 
     def save_stock_master_full_confirmed(self):
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         api_url = config_settings.stock_master_endpoint
 
         # Fetch existing quantities

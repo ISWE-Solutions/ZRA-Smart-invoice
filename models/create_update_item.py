@@ -290,7 +290,7 @@ class ProductTemplate(models.Model):
 
 
     def _handle_post_item_data(self, vals, is_create):
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
 
         if not config_settings:
             raise ValidationError("Configuration settings not found.")
@@ -312,7 +312,7 @@ class ProductTemplate(models.Model):
         self._post_item_data(vals, url, success_message)
 
     def _post_item_data(self, vals, url, success_message):
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         company = self.env.company
         current_user = self.env.user
         if not self.item_Cd:

@@ -436,10 +436,10 @@
                                         </t>
                                     </div>
                                 </t>
-                                <div t-if="o.qr_code_url">
-                                    <strong>QR Code:</strong>
-                                    <span t-esc="o.qr_code_url" style="width:15%;"/>
-                                </div>
+<!--                                <div t-if="o.qr_code_url">-->
+<!--                                    <strong>QR Code:</strong>-->
+<!--                                    <span t-esc="o.qr_code_url" style="width:15%;"/>-->
+<!--                                </div>-->
                             </div>
                         </div>
                     </div>

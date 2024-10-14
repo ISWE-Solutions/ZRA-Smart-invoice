@@ -10,4 +10,3 @@ access.zra.item.data,access_zra_item_data,zra_smart_invoice.model_zra_item_data,
 access.quantity.unit.data,access_quantity_unit_data,zra_smart_invoice.model_quantity_unit_data,base.group_user,1,1,1,1
 access.packaging.unit.data,access_packaging_unit_data,zra_smart_invoice.model_packaging_unit_data,base.group_user,1,1,1,1
 access.country.data,access_country_data,zra_smart_invoice.model_country_data,base.group_user,1,1,1,1
-access.endpoints,access_endpoints,zra_smart_invoice.model_endpoints,base.group_user,1,1,1,1
