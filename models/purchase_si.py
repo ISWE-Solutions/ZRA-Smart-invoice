@@ -189,7 +189,7 @@ class PurchaseData(models.Model):
         print('Fetch Endpoint Hit Count:', fetch_counter)
 
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         url = config_settings.purchase_si_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
@@ -706,7 +706,7 @@ class PurchaseData(models.Model):
         fetched_qty = sum(item.fetched for item in self.item_list)
         rejected_qty = fetched_qty - confirmed_qty
 
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         url = config_settings.purchase_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
@@ -784,7 +784,7 @@ class PurchaseData(models.Model):
 
         confirmed_qty = sum(item.qty for item in self.item_list)
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         url = config_settings.purchase_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
@@ -858,7 +858,7 @@ class PurchaseData(models.Model):
 
     def _save_item(self, stock_items):
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         url = config_settings.stock_io_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
@@ -907,7 +907,7 @@ class PurchaseData(models.Model):
         print("Stock master Payload being sent:", json.dumps(payload, indent=4))
         print(payload)
 
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         try:
             response = requests.post(config_settings.stock_master_endpoint, data=json.dumps(payload),
                                      headers={'Content-Type': 'application/json'})
@@ -919,7 +919,7 @@ class PurchaseData(models.Model):
 
     def _save_item_full_confirmed(self):
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         url = config_settings.stock_io_endpoint
         headers = {'Content-Type': 'application/json'}
         payload = {
@@ -981,7 +981,7 @@ class PurchaseData(models.Model):
 
     def _save_stock_master_full_confirmed(self):
         company = self.env.company
-        config_settings = self.env['endpoints'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().search([], limit=1)
         url = config_settings.stock_master_endpoint
         headers = {'Content-Type': 'application/json'}
 

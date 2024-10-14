@@ -25,7 +25,7 @@ Intergration with Zra smart invoice system
         'security/ir.model.access.csv',
         'views/import_view.xml',
         'views/purchase_views.xml',
-        'views/smart_invoice_config.xml',
+        # 'views/smart_invoice_config.xml',
         'views/views.xml',
         'views/templates.xml',
         'views/product_template_views.xml',
