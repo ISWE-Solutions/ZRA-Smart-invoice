@@ -10,7 +10,7 @@ class StockChangeProductQty(models.TransientModel):
     _inherit = 'stock.change.product.qty'
 
     def change_product_qty(self):
-        config_settings = self.env['res.company'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().browse(self.env.company.id)
         current_user = self.env.user
         _logger.info('Entering change_product_qty method.')
         print('Entering change_product_qty method.')
@@ -92,7 +92,7 @@ class StockPickingReturn(models.TransientModel):
         return result
 
     def _process_return_moves(self):
-        config_settings = self.env['res.company'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().browse(self.env.company.id)
         tpin, lpo, export_country_code = self.get_sales_order_fields()
         current_user = self.env.user
 
