@@ -9,7 +9,7 @@ class StockScrap(models.Model):
     _inherit = 'stock.scrap'
 
     def action_validate(self):
-        config_settings = self.env['res.company'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().browse(self.env.company.id)
         for record in self:
             print("Function action_validate invoked")
             res = super(StockScrap, record).action_validate()

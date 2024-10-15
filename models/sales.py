@@ -53,7 +53,7 @@ class AccountMove(models.Model):
 
 
     def send_to_external_api(self, order_payload):
-        config_settings = self.env['res.company'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().browse(self.env.company.id)
 
         sales_url = config_settings.sales_endpoint
         stock_url = config_settings.stock_io_endpoint
@@ -308,7 +308,7 @@ class AccountMove(models.Model):
 
     def action_post(self):
         res = super(AccountMove, self).action_post()
-        config_settings = self.env['res.company'].sudo().search([], limit=1)
+        config_settings = self.env['res.company'].sudo().browse(self.env.company.id)
 
         # Check for stockable products only
         stockable_product_lines = self.invoice_line_ids.filtered(lambda l: l.product_id.detailed_type == 'product')
